@@ -1,0 +1,29 @@
+# =============================================================================
+# INCOME PREDICTION PRODUCTION PIPELINE - MINIMAL REQUIREMENTS
+# =============================================================================
+# 
+# Minimal dependencies needed ONLY for the production pipeline:
+# models/production/00_predictions_pipeline.py
+#
+# QUICK SETUP:
+# 1. mamba create -n income-prediction python=3.9
+# 2. mamba activate income-prediction  
+# 3. pip install -r requirements_production_pipeline.txt
+# 4. python models/production/00_predictions_pipeline.py
+# =============================================================================
+
+# Core Data Processing
+pandas>=2.1.0
+numpy>=1.24.0
+
+# Machine Learning (Essential)
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+joblib>=1.3.0
+
+# Date/Time Utilities (for feature engineering)
+python-dateutil>=2.8.0
+
+# =============================================================================
+# THAT'S IT! Only 6 packages needed for your production pipeline
+# =============================================================================

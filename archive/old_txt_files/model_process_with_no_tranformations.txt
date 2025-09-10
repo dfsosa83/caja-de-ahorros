@@ -1,0 +1,1346 @@
+# %%
+# SECTION 9: PREPARE FINAL DATASETS FOR MODELING
+# =============================================================================
+print("\n🎯 PREPARING FINAL DATASETS")
+print("-" * 50)
+
+# EXPLICIT FEATURE SELECTION APPROACH
+id_columns = ['cliente', 'identificador_unico']
+target_column = 'ingresos_reportados'
+
+# Manually specify ONLY the features you want to use
+feature_columns = selected_features_final
+
+# Verify all selected features exist in the dataset
+available_features = []
+missing_features = []
+
+for feature in feature_columns:
+    if feature in train_df_enhanced.columns:
+        available_features.append(feature)
+    else:
+        missing_features.append(feature)
+
+if missing_features:
+    print(f"⚠️  Missing features (will be skipped): {missing_features}")
+
+feature_columns = available_features
+
+print(f"   📊 Selected feature columns: {len(feature_columns)}")
+print(f"   🎯 Target column: {target_column}")
+
+# Create feature matrices and targets
+X_train = train_df_enhanced[feature_columns].copy()
+y_train = train_df_enhanced[target_column].copy()
+
+X_valid = valid_df_enhanced[feature_columns].copy()
+y_valid = valid_df_enhanced[target_column].copy()
+
+X_test = test_df_enhanced[feature_columns].copy()
+y_test = test_df_enhanced[target_column].copy()
+
+print(f"\n📈 FINAL DATASET SHAPES:")
+print(f"   X_train: {X_train.shape}")
+print(f"   X_valid: {X_valid.shape}")
+print(f"   X_test: {X_test.shape}")
+
+# Show selected features
+print(f"\n📋 SELECTED FEATURES:")
+for i, feature in enumerate(feature_columns, 1):
+    print(f"   {i:2d}. {feature}")
+
+# Verify data quality
+print(f"\n✅ DATA QUALITY CHECKS:")
+print(f"   Missing values in X_train: {X_train.isnull().sum().sum()}")
+print(f"   Missing values in y_train: {y_train.isnull().sum()}")
+print(f"   All features numeric: {all(X_train.dtypes.apply(lambda x: x in ['int64', 'float64']))}")
+
+# %%
+# INSPECT FINAL FEATURE NAMES
+# =============================================================================
+print(f"\n📋 FINAL FEATURE LIST ({len(feature_columns)} features):")
+print("-" * 60)
+
+# Group features by type for better readability
+basic_features = []
+age_features = []
+freq_features = []
+interaction_features = []
+other_features = []
+
+for feature in feature_columns:
+    if feature.startswith('age_group_'):
+        age_features.append(feature)
+    elif feature.endswith('_freq'):
+        freq_features.append(feature)
+    elif '_x_' in feature or 'retired_x_' in feature or 'employer_x_' in feature or 'gender_x_' in feature:
+        interaction_features.append(feature)
+    elif feature in ['edad', 'letras_mensuales', 'monto_letra', 'saldo', 'is_retired']:
+        basic_features.append(feature)
+    else:
+        other_features.append(feature)
+
+print(f"🔢 BASIC FEATURES ({len(basic_features)}):")
+for feature in basic_features:
+    print(f"   - {feature}")
+
+print(f"\n👥 AGE GROUP FEATURES ({len(age_features)}):")
+for feature in age_features:
+    print(f"   - {feature}")
+
+print(f"\n📊 FREQUENCY FEATURES ({len(freq_features)}):")
+for feature in freq_features:
+    print(f"   - {feature}")
+
+print(f"\n⚡ INTERACTION FEATURES ({len(interaction_features)}):")
+for feature in interaction_features:
+    print(f"   - {feature}")
+
+print(f"\n🔧 OTHER FEATURES ({len(other_features)}):")
+for feature in other_features:
+    print(f"   - {feature}")
+
+# Save feature list to file for reference
+feature_list_df = pd.DataFrame({
+    'feature_name': feature_columns,
+    'feature_type': ['basic' if f in basic_features else
+                    'age_group' if f in age_features else
+                    'frequency' if f in freq_features else
+                    'interaction' if f in interaction_features else
+                    'other' for f in feature_columns]
+})
+
+feature_list_df.to_csv(data_path + '/final_feature_list.csv', index=False)
+print(f"\n💾 Feature list saved to: final_feature_list.csv")
+
+# %%
+# SECTION 10: GROUPKFOLD SETUP FOR IMBALANCED FEATURES
+# =============================================================================
+print("\n🔄 GROUPKFOLD SETUP FOR IMBALANCED FEATURES")
+print("-" * 50)
+
+def create_age_groups(df):
+    """
+    Create groups based on imbalanced age features for GroupKFold
+    """
+    imbalanced_age_features = ['age_group_65+','is_retired']
+    #imbalanced_age_features = ['age_group_26-35', 'age_group_36-45']
+    groups = []
+
+    for idx, row in df.iterrows():
+        group_assigned = False
+        for i, age_feature in enumerate(imbalanced_age_features):
+            if age_feature in df.columns and row[age_feature] == 1:
+                groups.append(i + 1)  # Groups 1, 2, 3
+                group_assigned = True
+                break
+
+        if not group_assigned:
+            groups.append(0)  # Default group
+
+    return np.array(groups)
+
+# Create groups for training set
+groups_train = create_age_groups(X_train)
+group_counts = pd.Series(groups_train).value_counts().sort_index()
+
+print(f"   📊 Group distribution:")
+for group, count in group_counts.items():
+    print(f"      Group {group}: {count:,} samples ({count/len(groups_train)*100:.1f}%)")
+
+# Setup GroupKFold
+gkf = GroupKFold(n_splits=4)
+print(f"   ✅ GroupKFold configured: 4 splits")
+
+print("\n🚀 READY FOR MODEL TRAINING!")
+print("=" * 80)
+
+# %%
+# SECTION 11: MODEL TRAINING AND COMPARISON
+# =============================================================================
+print("\n🤖 MODEL TRAINING AND COMPARISON")
+print("-" * 50)
+
+# Apply robust scaling to features
+print("   ⚖️ Applying RobustScaler...")
+scaler = RobustScaler()
+X_train_scaled = pd.DataFrame(
+    scaler.fit_transform(X_train),
+    columns=X_train.columns,
+    index=X_train.index
+)
+X_valid_scaled = pd.DataFrame(
+    scaler.transform(X_valid),
+    columns=X_valid.columns,
+    index=X_valid.index
+)
+X_test_scaled = pd.DataFrame(
+    scaler.transform(X_test),
+    columns=X_test.columns,
+    index=X_test.index
+)
+print("   ✅ Feature scaling complete")
+
+# IMMEDIATE ACTION: Replace your model configs with this
+models = {
+    'XGBoost': xgb.XGBRegressor(
+        n_estimators=500, max_depth=8, learning_rate=0.05,
+        subsample=0.85, colsample_bytree=0.85, reg_alpha=0.1, reg_lambda=1.0,
+        random_state=42, n_jobs=-1
+    ),
+    'LightGBM': lgb.LGBMRegressor(
+        n_estimators=500, max_depth=8, learning_rate=0.05,
+        subsample=0.85, colsample_bytree=0.85, num_leaves=100,
+        min_child_samples=20, reg_alpha=0.1, reg_lambda=1.0,
+        random_state=42, n_jobs=-1, verbose=-1
+    ),
+    'Random Forest': RandomForestRegressor(
+        n_estimators=300, max_depth=15, min_samples_split=10,
+        min_samples_leaf=5, max_features='sqrt',
+        random_state=42, n_jobs=-1
+    )
+}
+
+# %%
+# QUICK SOLUTION: USE REGULAR KFOLD
+# =============================================================================
+from sklearn.model_selection import KFold
+
+gkf = KFold(n_splits=8, shuffle=True, random_state=42)
+USE_GROUP_KFOLD = False
+groups_train = None
+
+print("✅ Using regular KFold: 8 splits")
+print("   💡 This will work fine for hyperparameter tuning!")
+
+# %%
+# SECTION 11.5: HYPERPARAMETER TUNING (OPTIONAL)
+# =============================================================================
+print("\n🔧 HYPERPARAMETER TUNING SETUP")
+print("-" * 50)
+
+from sklearn.model_selection import RandomizedSearchCV
+
+# HYPERPARAMETER TUNING GRIDS
+# =============================================================================
+
+# XGBoost tuning grid
+xgb_param_grid = {
+    'n_estimators': [100, 250, 350],
+    'max_depth': [8, 10,16],
+    'learning_rate': [0.004,0.006,0.009],
+    'subsample': [0.8, 0.85, 0.9],
+    'colsample_bytree': [0.8, 0.85, 0.9],
+    'reg_alpha': [0, 0.1, 0.5],
+    'reg_lambda': [0.5, 1.0, 2.0],
+    'min_child_weight': [1, 3, 5]
+}
+
+# LightGBM tuning grid
+lgb_param_grid = {
+    'n_estimators': [250, 350, 450],
+    'max_depth': [6, 8, 10],
+    'learning_rate': [0.002, 0.005, 0.007],
+    'subsample': [0.7, 0.8, 0.85],
+    'colsample_bytree': [0.7, 0.8, 0.85],
+    'num_leaves': [30, 50, 80],
+    'min_child_samples': [30, 40, 50],
+    'reg_alpha': [0.5, 1.0, 1.5],
+    'reg_lambda': [2.0, 3.0, 4.0]
+}
+
+# Random Forest tuning grid
+rf_param_grid = {
+    'n_estimators': [200, 300, 400],
+    'max_depth': [10, 15, 20, None],
+    'min_samples_split': [5, 10, 15],
+    'min_samples_leaf': [2, 5, 10],
+    'max_features': ['sqrt', 'log2', 0.8],
+    'max_samples': [0.7, 0.8, 0.9]
+}
+
+# Hyperparameter tuning function
+def tune_hyperparameters(model, param_grid, X_train, y_train, groups, model_name):
+    """
+    Perform hyperparameter tuning with flexible CV strategy
+    """
+    print(f"\n🔧 Tuning {model_name} hyperparameters...")
+    
+    random_search = RandomizedSearchCV(
+        estimator=model,
+        param_distributions=param_grid,
+        n_iter=8,
+        cv=gkf,  # Use the global cv strategy
+        scoring='neg_mean_squared_error',
+        n_jobs=-1,
+        random_state=42,
+        verbose=1
+    )
+    
+    # Fit with or without groups
+    if USE_GROUP_KFOLD and groups is not None:
+        random_search.fit(X_train, y_train, groups=groups)
+    else:
+        random_search.fit(X_train, y_train)
+    
+    print(f"   ✅ Best {model_name} score: {-random_search.best_score_:.4f}")
+    print(f"   ✅ Best {model_name} params: {random_search.best_params_}")
+    
+    return random_search.best_estimator_, random_search.best_params_
+
+print("✅ Hyperparameter tuning setup complete")
+
+# %%
+# SECTION 11.6: APPLY HYPERPARAMETER TUNING (OPTIONAL - COMMENT OUT IF SKIPPING)
+# =============================================================================
+print("\n🚀 APPLYING HYPERPARAMETER TUNING")
+print("-" * 50)
+
+# Set this to True if you want to run hyperparameter tuning (takes longer)
+RUN_HYPERPARAMETER_TUNING = True  # Change to True to enable
+
+if RUN_HYPERPARAMETER_TUNING:
+    print("🔧 Running hyperparameter tuning (this may take 10-30 minutes)...")
+    
+    # Create base models for tuning
+    base_models = {
+        'XGBoost': xgb.XGBRegressor(random_state=42, n_jobs=-1),
+        'LightGBM': lgb.LGBMRegressor(random_state=42, n_jobs=-1, verbose=-1),
+        'Random Forest': RandomForestRegressor(random_state=42, n_jobs=-1)
+    }
+    
+    # Parameter grids
+    param_grids = {
+        'XGBoost': xgb_param_grid,
+        'LightGBM': lgb_param_grid,
+        'Random Forest': rf_param_grid
+    }
+    
+    # Tune each model
+    tuned_models = {}
+    tuned_params = {}
+    
+    for model_name, base_model in base_models.items():
+        print(f"\n{'='*60}")
+        print(f"TUNING {model_name.upper()}")
+        print(f"{'='*60}")
+        
+        tuned_model, best_params = tune_hyperparameters(
+            base_model,
+            param_grids[model_name],
+            X_train_scaled, y_train, groups_train,
+            model_name
+        )
+        
+        tuned_models[model_name] = tuned_model
+        tuned_params[model_name] = best_params
+    
+    # Replace original models with tuned models
+    models = tuned_models
+    print(f"\n✅ Hyperparameter tuning complete! Using tuned models.")
+    
+    # Save tuned parameters for reference
+    import json
+    with open(data_path + '/best_hyperparameters.json', 'w') as f:
+        # Convert numpy types to native Python types for JSON serialization
+        json_params = {}
+        for model_name, params in tuned_params.items():
+            json_params[model_name] = {k: int(v) if isinstance(v, np.integer) else 
+                                     float(v) if isinstance(v, np.floating) else v 
+                                     for k, v in params.items()}
+        json.dump(json_params, f, indent=2)
+    print(f"   💾 Best parameters saved to: best_hyperparameters.json")
+
+else:
+    print("⏭️  Skipping hyperparameter tuning (using default parameters)")
+    print("   💡 Set RUN_HYPERPARAMETER_TUNING = True to enable tuning")
+
+# %%
+# SECTION 12: CROSS-VALIDATION AND MODEL EVALUATION
+# =============================================================================
+print("\n📊 CROSS-VALIDATION EVALUATION")
+print("-" * 50)
+
+def evaluate_model_cv(model, X, y, groups, model_name):
+    """
+    Evaluate model using GroupKFold cross-validation
+    """
+    print(f"\n   🔄 Evaluating {model_name}...")
+
+    # Cross-validation scores
+    cv_scores = cross_val_score(
+        model, X, y,
+        groups=groups,
+        cv=gkf,
+        scoring='neg_mean_squared_error',
+        n_jobs=-1
+    )
+
+    # Convert to RMSE
+    cv_rmse = np.sqrt(-cv_scores)
+
+    # Calculate R² using cross-validation
+    cv_r2_scores = cross_val_score(
+        model, X, y,
+        groups=groups,
+        cv=gkf,
+        scoring='r2',
+        n_jobs=-1
+    )
+
+    print(f"      📈 CV RMSE: {cv_rmse.mean():.2f} ± {cv_rmse.std():.2f}")
+    print(f"      📈 CV R²: {cv_r2_scores.mean():.4f} ± {cv_r2_scores.std():.4f}")
+
+    return {
+        'cv_rmse_mean': cv_rmse.mean(),
+        'cv_rmse_std': cv_rmse.std(),
+        'cv_r2_mean': cv_r2_scores.mean(),
+        'cv_r2_std': cv_r2_scores.std()
+    }
+
+# Evaluate all models
+cv_results = {}
+for model_name, model in models.items():
+    cv_results[model_name] = evaluate_model_cv(model, X_train_scaled, y_train, groups_train, model_name)
+
+# %%
+# SECTION 13: FINAL MODEL TRAINING AND VALIDATION
+# =============================================================================
+print("\n🎯 FINAL MODEL TRAINING")
+print("-" * 50)
+
+def train_and_evaluate_final(model, X_train, y_train, X_valid, y_valid, model_name):
+    """
+    Train final model and evaluate on validation set
+    """
+    print(f"\n   🚀 Training final {model_name}...")
+
+    # Train model
+    model.fit(X_train, y_train)
+
+    # Predictions
+    y_pred_train = model.predict(X_train)
+    y_pred_valid = model.predict(X_valid)
+
+    # Metrics
+    train_rmse = np.sqrt(mean_squared_error(y_train, y_pred_train))
+    valid_rmse = np.sqrt(mean_squared_error(y_valid, y_pred_valid))
+
+    train_r2 = r2_score(y_train, y_pred_train)
+    valid_r2 = r2_score(y_valid, y_pred_valid)
+
+    train_mae = mean_absolute_error(y_train, y_pred_train)
+    valid_mae = mean_absolute_error(y_valid, y_pred_valid)
+
+    print(f"      📊 Training   - RMSE: {train_rmse:.2f}, R²: {train_r2:.4f}, MAE: {train_mae:.2f}")
+    print(f"      📊 Validation - RMSE: {valid_rmse:.2f}, R²: {valid_r2:.4f}, MAE: {valid_mae:.2f}")
+
+    return {
+        'model': model,
+        'train_rmse': train_rmse, 'valid_rmse': valid_rmse,
+        'train_r2': train_r2, 'valid_r2': valid_r2,
+        'train_mae': train_mae, 'valid_mae': valid_mae,
+        'y_pred_valid': y_pred_valid
+    }
+
+# Train all final models
+final_results = {}
+for model_name, model in models.items():
+    final_results[model_name] = train_and_evaluate_final(
+        model, X_train_scaled, y_train, X_valid_scaled, y_valid, model_name
+    )
+
+# %%
+# SECTION 14: MODEL COMPARISON AND SELECTION
+# =============================================================================
+print("\n🏆 MODEL COMPARISON SUMMARY")
+print("-" * 50)
+
+# Create comparison DataFrame
+comparison_data = []
+for model_name in models.keys():
+    cv_res = cv_results[model_name]
+    final_res = final_results[model_name]
+
+    comparison_data.append({
+        'Model': model_name,
+        'CV_R2_Mean': cv_res['cv_r2_mean'],
+        'CV_R2_Std': cv_res['cv_r2_std'],
+        'CV_RMSE_Mean': cv_res['cv_rmse_mean'],
+        'Valid_R2': final_res['valid_r2'],
+        'Valid_RMSE': final_res['valid_rmse'],
+        'Valid_MAE': final_res['valid_mae']
+    })
+
+comparison_df = pd.DataFrame(comparison_data)
+comparison_df = comparison_df.sort_values('Valid_R2', ascending=False)
+
+print("\n📊 PERFORMANCE COMPARISON:")
+print(comparison_df.round(4).to_string(index=False))
+
+# Select best model
+best_model_name = comparison_df.iloc[0]['Model']
+best_model_results = final_results[best_model_name]
+
+print(f"\n🥇 BEST MODEL: {best_model_name}")
+print(f"   📈 Validation R²: {best_model_results['valid_r2']:.4f}")
+print(f"   📈 Validation RMSE: {best_model_results['valid_rmse']:.2f}")
+print(f"   📈 Validation MAE: {best_model_results['valid_mae']:.2f}")
+
+
+# %%
+# SECTION 15: FINAL TEST EVALUATION
+# =============================================================================
+print("\n🎯 FINAL TEST EVALUATION")
+print("-" * 50)
+
+# Evaluate best model on test set
+best_model = best_model_results['model']
+y_pred_test = best_model.predict(X_test_scaled)
+
+# Test metrics
+test_rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
+test_r2 = r2_score(y_test, y_pred_test)
+test_mae = mean_absolute_error(y_test, y_pred_test)
+
+print(f"🏆 FINAL TEST PERFORMANCE ({best_model_name}):")
+print(f"   📊 Test RMSE: {test_rmse:.2f}")
+print(f"   📊 Test R²: {test_r2:.4f}")
+print(f"   📊 Test MAE: {test_mae:.2f}")
+
+# Target statistics comparison
+print(f"\n📈 TARGET DISTRIBUTION COMPARISON:")
+print(f"   Training   - Mean: ${y_train.mean():,.2f}, Std: ${y_train.std():,.2f}")
+print(f"   Validation - Mean: ${y_valid.mean():,.2f}, Std: ${y_valid.std():,.2f}")
+print(f"   Test       - Mean: ${y_test.mean():,.2f}, Std: ${y_test.std():,.2f}")
+print(f"   Predictions- Mean: ${y_pred_test.mean():,.2f}, Std: ${y_pred_test.std():,.2f}")
+
+print("\n" + "=" * 80)
+print("🎉 INCOME PREDICTION MODEL PIPELINE COMPLETE!")
+print(f"🎯 FINAL PERFORMANCE: R² = {test_r2:.4f}")
+print("=" * 80)
+
+
+# %%
+# SECTION 16: SAVE RESULTS AND ARTIFACTS
+# =============================================================================
+print("\n💾 SAVING RESULTS")
+print("-" * 50)
+
+# Save model artifacts
+import joblib
+
+# Save best model and scaler
+model_artifacts = {
+    'best_model': best_model,
+    'scaler': scaler,
+    'feature_columns': feature_columns,
+    'model_name': best_model_name,
+    'test_performance': {
+        'r2': test_r2,
+        'rmse': test_rmse,
+        'mae': test_mae
+    }
+}
+
+# Save to file
+joblib.dump(model_artifacts, data_path + '/income_prediction_model.pkl')
+print(f"   ✅ Model artifacts saved to: income_prediction_model.pkl")
+
+# Save enhanced datasets
+train_df_enhanced.to_csv(data_path + '/train_enhanced.csv', index=False)
+valid_df_enhanced.to_csv(data_path + '/valid_enhanced.csv', index=False)
+test_df_enhanced.to_csv(data_path + '/test_enhanced.csv', index=False)
+print(f"   ✅ Enhanced datasets saved")
+
+# Save comparison results
+comparison_df.to_csv(data_path + '/model_comparison.csv', index=False)
+print(f"   ✅ Model comparison saved")
+
+print("\n🎯 NEXT STEPS FOR IMPROVEMENT:")
+print("   1. Hyperparameter tuning with RandomizedSearchCV")
+print("   2. Ensemble methods (combine top models)")
+print("   3. Additional feature engineering")
+print("   4. Advanced outlier detection methods")
+print(f"   5. Target: Improve R² from {test_r2:.4f} to 0.35+")
+
+print("\n✅ PIPELINE READY FOR OPTIMIZATION!")
+print("=" * 80)
+
+
+####IN THIS PART SHWOW ME THE NAME OF BEST MODEL ########
+# The best model is already available in your session
+print(f"Best model: {best_model_name}")
+print(f"Model object: {best_model}")
+
+# Calculate permutation importance
+perm_importance = permutation_importance(best_model, X_test_scaled, y_test, n_repeats=15, random_state=42)
+
+# Sort features by importance
+feature_importance = perm_importance.importances_mean
+sorted_idx = feature_importance.argsort()
+
+# Get feature names from your dataset (replace these with your actual feature names)
+feature_names = X_test_scaled.columns  # or your list of feature names
+
+# Create the plot
+plt.figure(figsize=(8, 4))
+
+# Get the top 15 (or fewer) important features
+num_features_to_plot = min(20, len(feature_importance))
+top_indices = sorted_idx[-num_features_to_plot:]
+
+# Plot only the top features
+plt.barh(range(num_features_to_plot), feature_importance[top_indices],color='red')
+plt.yticks(range(num_features_to_plot), [feature_names[i] for i in top_indices])
+plt.xlabel('Mean Decrease in Accuracy')
+plt.title('Permutation Importance (Top 20 Features)')
+plt.tight_layout()
+plt.show()
+
+# Print the names of the top features
+print("Top 20 Feature Names:")
+for i in reversed(top_indices):
+    print(feature_names[i])
+
+y_test_pred_lg_class = best_model.predict(X_test_scaled)
+
+test_lg_test =X_test_scaled.copy()
+test_lg_test['target'] = y_test
+test_lg_test ["set_type"]='test'
+
+test_lg_test["pred_income"] = y_test_pred_lg_class
+
+# Calculate performance metrics
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, explained_variance_score
+
+mae = mean_absolute_error(test_lg_test.target, test_lg_test.pred_income)
+mse = mean_squared_error(test_lg_test.target, test_lg_test.pred_income)
+rmse = np.sqrt(mse)
+r2 = r2_score(test_lg_test.target, test_lg_test.pred_income)
+evs = explained_variance_score(test_lg_test.target, test_lg_test.pred_income)
+
+# Calculate MAPE
+mape = np.mean(np.abs((test_lg_test.target - test_lg_test.pred_income) / test_lg_test.target)) * 100
+
+# Print the results
+print(f"Mean Absolute Error (MAE): {mae:.4f}")
+print(f"Mean Squared Error (MSE): {mse:.4f}")
+print(f"Root Mean Squared Error (RMSE): {rmse:.4f}")
+print(f"R-squared (R²) Score: {r2:.4f}")
+print(f"Explained Variance Score: {evs:.4f}")
+print(f"Mean Absolute Percentage Error (MAPE): {mape:.4f}%")
+
+#best_model_name = best_model
+X_test_final = X_test_scaled
+y_train_cleaned = y_train
+y_test_cleaned = y_test
+best_model_name = best_model
+
+# Visualizing Training Target vs Test Predictions
+# ============================================================================
+print("=" * 60)
+print("VISUALIZING TRAINING TARGET vs TEST PREDICTIONS")
+print("=" * 60)
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+# First, get predictions on test set using the best model
+best_model_obj = best_model  # Use best_model_name instead of best_model
+test_predictions = best_model_obj.predict(X_test_final)
+
+print(f"Using best model: {best_model_name}")
+print(f"Test predictions shape: {test_predictions.shape}")
+print(f"Training target shape: {y_train_cleaned.shape}")
+
+# Set up the plotting style
+plt.style.use('default')
+fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+fig.suptitle(f'Training Target vs Test Predictions - {best_model_name}', fontsize=16)
+
+# 1. Distribution Comparison (Histograms)
+axes[0,0].hist(y_train_cleaned, bins=50, alpha=0.7, label='Training Target', color='blue', density=True)
+axes[0,0].hist(test_predictions, bins=50, alpha=0.7, label='Test Predictions', color='red', density=True)
+axes[0,0].set_xlabel('Income (ingresos_reportados)')
+axes[0,0].set_ylabel('Density')
+axes[0,0].set_title('Distribution Comparison')
+axes[0,0].legend()
+axes[0,0].grid(True, alpha=0.3)
+
+# 2. Box Plot Comparison
+box_data = [y_train_cleaned, test_predictions]
+box_labels = ['Training Target', 'Test Predictions']
+axes[0,1].boxplot(box_data, labels=box_labels)
+axes[0,1].set_ylabel('Income (ingresos_reportados)')
+axes[0,1].set_title('Box Plot Comparison')
+axes[0,1].grid(True, alpha=0.3)
+
+# 3. Q-Q Plot (Quantile-Quantile)
+train_quantiles = np.percentile(y_train_cleaned, np.linspace(0, 100, 100))
+pred_quantiles = np.percentile(test_predictions, np.linspace(0, 100, 100))
+
+axes[0,2].scatter(train_quantiles, pred_quantiles, alpha=0.6)
+axes[0,2].plot([min(train_quantiles), max(train_quantiles)], 
+               [min(train_quantiles), max(train_quantiles)], 'r--', lw=2)
+axes[0,2].set_xlabel('Training Target Quantiles')
+axes[0,2].set_ylabel('Test Predictions Quantiles')
+axes[0,2].set_title('Q-Q Plot')
+axes[0,2].grid(True, alpha=0.3)
+
+# 4. Actual vs Predicted Scatter Plot (Test Set)
+axes[1,0].scatter(y_test_cleaned, test_predictions, alpha=0.6, s=20)
+axes[1,0].plot([y_test_cleaned.min(), y_test_cleaned.max()], 
+               [y_test_cleaned.min(), y_test_cleaned.max()], 'r--', lw=2)
+axes[1,0].set_xlabel('Actual Test Values')
+axes[1,0].set_ylabel('Predicted Test Values')
+axes[1,0].set_title('Actual vs Predicted (Test Set)')
+axes[1,0].grid(True, alpha=0.3)
+
+# Calculate R² for the plot
+test_r2 = r2_score(y_test_cleaned, test_predictions)
+axes[1,0].text(0.05, 0.95, f'R² = {test_r2:.3f}', transform=axes[1,0].transAxes, 
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+# 5. Residuals Plot
+residuals = y_test_cleaned - test_predictions
+axes[1,1].scatter(test_predictions, residuals, alpha=0.6, s=20)
+axes[1,1].axhline(y=0, color='r', linestyle='--', lw=2)
+axes[1,1].set_xlabel('Predicted Values')
+axes[1,1].set_ylabel('Residuals (Actual - Predicted)')
+axes[1,1].set_title('Residuals Plot')
+axes[1,1].grid(True, alpha=0.3)
+
+# 6. Cumulative Distribution Functions
+train_sorted = np.sort(y_train_cleaned)
+pred_sorted = np.sort(test_predictions)
+train_cdf = np.arange(1, len(train_sorted) + 1) / len(train_sorted)
+pred_cdf = np.arange(1, len(pred_sorted) + 1) / len(pred_sorted)
+
+axes[1,2].plot(train_sorted, train_cdf, label='Training Target', linewidth=2)
+axes[1,2].plot(pred_sorted, pred_cdf, label='Test Predictions', linewidth=2)
+axes[1,2].set_xlabel('Income (ingresos_reportados)')
+axes[1,2].set_ylabel('Cumulative Probability')
+axes[1,2].set_title('Cumulative Distribution Functions')
+axes[1,2].legend()
+axes[1,2].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+# Statistical Comparison
+print(f"\n--- STATISTICAL COMPARISON ---")
+print(f"Training Target Statistics:")
+print(f"  - Mean: ${y_train_cleaned.mean():,.2f}")
+print(f"  - Median: ${y_train_cleaned.median():,.2f}")
+print(f"  - Std: ${y_train_cleaned.std():,.2f}")
+print(f"  - Min: ${y_train_cleaned.min():,.2f}")
+print(f"  - Max: ${y_train_cleaned.max():,.2f}")
+
+print(f"\nTest Predictions Statistics:")
+print(f"  - Mean: ${test_predictions.mean():,.2f}")
+print(f"  - Median: ${np.median(test_predictions):,.2f}")
+print(f"  - Std: ${test_predictions.std():,.2f}")
+print(f"  - Min: ${test_predictions.min():,.2f}")
+print(f"  - Max: ${test_predictions.max():,.2f}")
+
+print(f"\nTest Set Performance:")
+test_rmse = np.sqrt(mean_squared_error(y_test_cleaned, test_predictions))
+test_mae = np.mean(np.abs(y_test_cleaned - test_predictions))
+print(f"  - RMSE: {test_rmse:.4f}")
+print(f"  - R²: {test_r2:.4f}")
+print(f"  - MAE: {test_mae:.4f}")
+
+# Distribution similarity tests
+from scipy.stats import ks_2samp
+ks_statistic, ks_pvalue = ks_2samp(y_train_cleaned, test_predictions)
+print(f"\nKolmogorov-Smirnov Test:")
+print(f"  - KS Statistic: {ks_statistic:.4f}")
+print(f"  - P-value: {ks_pvalue:.4f}")
+print(f"  - Interpretation: {'Distributions are similar' if ks_pvalue > 0.05 else 'Distributions are different'}")
+
+# %%
+# =============================================================================
+# COMPREHENSIVE INCOME PREDICTION EVALUATION
+# =============================================================================
+print("\n📊 COMPREHENSIVE MODEL EVALUATION")
+print("-" * 60)
+
+def comprehensive_income_evaluation(y_true, y_pred, model_name="Model"):
+    """
+    Comprehensive evaluation for income prediction models
+    """
+    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error, median_absolute_error
+    
+    results = {}
+    
+    # 1. Standard Regression Metrics
+    results['R2'] = r2_score(y_true, y_pred)
+    results['RMSE'] = np.sqrt(mean_squared_error(y_true, y_pred))
+    results['MAE'] = mean_absolute_error(y_true, y_pred)
+    results['Median_AE'] = median_absolute_error(y_true, y_pred)
+    
+    # 2. Percentage-based Metrics
+    # Avoid division by zero
+    non_zero_mask = y_true != 0
+    if np.sum(non_zero_mask) > 0:
+        mape = np.mean(np.abs((y_true[non_zero_mask] - y_pred[non_zero_mask]) / y_true[non_zero_mask])) * 100
+        results['MAPE'] = mape
+    else:
+        results['MAPE'] = np.nan
+    
+    # 3. Quantile Performance
+    quantiles = [0.25, 0.5, 0.75, 0.9, 0.95]
+    for q in quantiles:
+        threshold = np.quantile(y_true, q)
+        mask = y_true <= threshold
+        
+        if np.sum(mask) > 10:  # Ensure enough samples
+            r2_q = r2_score(y_true[mask], y_pred[mask])
+            results[f'R2_Q{int(q*100)}'] = r2_q
+    
+    # 4. High-Income Performance (Top 20%)
+    high_income_threshold = np.quantile(y_true, 0.8)
+    high_income_mask = y_true >= high_income_threshold
+    
+    if np.sum(high_income_mask) > 5:
+        results['High_Income_R2'] = r2_score(y_true[high_income_mask], y_pred[high_income_mask])
+        results['High_Income_MAE'] = mean_absolute_error(y_true[high_income_mask], y_pred[high_income_mask])
+        results['High_Income_Count'] = np.sum(high_income_mask)
+        
+        # High income MAPE
+        if np.all(y_true[high_income_mask] != 0):
+            high_mape = np.mean(np.abs((y_true[high_income_mask] - y_pred[high_income_mask]) / y_true[high_income_mask])) * 100
+            results['High_Income_MAPE'] = high_mape
+    
+    # 5. Business Metrics
+    # Within 15% accuracy
+    if np.sum(non_zero_mask) > 0:
+        relative_error = np.abs((y_true[non_zero_mask] - y_pred[non_zero_mask]) / y_true[non_zero_mask]) * 100
+        results['Within_15pct'] = np.mean(relative_error <= 15) * 100
+        results['Within_20pct'] = np.mean(relative_error <= 20) * 100
+        results['Within_25pct'] = np.mean(relative_error <= 25) * 100
+    
+    # 6. Income Bracket Accuracy
+    # Define brackets based on your data distribution
+    income_brackets = [0, 600, 1000, 1500, 2500, float('inf')]
+    true_brackets = pd.cut(y_true, income_brackets, labels=False)
+    pred_brackets = pd.cut(y_pred, income_brackets, labels=False)
+    results['Bracket_Accuracy'] = np.mean(true_brackets == pred_brackets) * 100
+    
+    # 7. Underestimation/Overestimation Analysis
+    residuals = y_pred - y_true
+    results['Mean_Residual'] = np.mean(residuals)
+    results['Underestimation_Rate'] = np.mean(residuals < 0) * 100  # % of underestimated cases
+    results['Overestimation_Rate'] = np.mean(residuals > 0) * 100   # % of overestimated cases
+    
+    return results
+
+# Apply comprehensive evaluation
+print("🔍 Evaluating model performance...")
+
+# Assuming you have y_test and test_predictions
+evaluation_results = comprehensive_income_evaluation(y_test, test_predictions, "XGBoost")
+
+# Display results in a nice format
+print(f"\n📈 COMPREHENSIVE EVALUATION RESULTS")
+print("=" * 60)
+
+# Group results by category
+standard_metrics = ['R2', 'RMSE', 'MAE', 'Median_AE', 'MAPE']
+quantile_metrics = [k for k in evaluation_results.keys() if k.startswith('R2_Q')]
+high_income_metrics = [k for k in evaluation_results.keys() if k.startswith('High_Income')]
+business_metrics = ['Within_15pct', 'Within_20pct', 'Within_25pct', 'Bracket_Accuracy']
+bias_metrics = ['Mean_Residual', 'Underestimation_Rate', 'Overestimation_Rate']
+
+print("\n🎯 STANDARD REGRESSION METRICS:")
+for metric in standard_metrics:
+    if metric in evaluation_results:
+        value = evaluation_results[metric]
+        if metric == 'MAPE' or 'pct' in metric:
+            print(f"   {metric:<15}: {value:.2f}%")
+        else:
+            print(f"   {metric:<15}: {value:.4f}")
+
+print("\n📊 QUANTILE PERFORMANCE:")
+for metric in quantile_metrics:
+    if metric in evaluation_results:
+        print(f"   {metric:<15}: {evaluation_results[metric]:.4f}")
+
+print("\n💰 HIGH-INCOME PERFORMANCE:")
+for metric in high_income_metrics:
+    if metric in evaluation_results:
+        value = evaluation_results[metric]
+        if 'MAPE' in metric:
+            print(f"   {metric:<20}: {value:.2f}%")
+        elif 'Count' in metric:
+            print(f"   {metric:<20}: {int(value)} customers")
+        else:
+            print(f"   {metric:<20}: {value:.4f}")
+
+print("\n🎯 BUSINESS METRICS:")
+for metric in business_metrics:
+    if metric in evaluation_results:
+        print(f"   {metric:<20}: {evaluation_results[metric]:.1f}%")
+
+print("\n⚖️ BIAS ANALYSIS:")
+for metric in bias_metrics:
+    if metric in evaluation_results:
+        value = evaluation_results[metric]
+        if 'Rate' in metric:
+            print(f"   {metric:<20}: {value:.1f}%")
+        else:
+            print(f"   {metric:<20}: ${value:.2f}")
+
+print("\n✅ Comprehensive evaluation complete!")
+
+# %%
+# DIAGNOSTIC: CHECK MODEL NAMING ISSUE
+# =============================================================================
+print("🔍 DIAGNOSING MODEL NAMING DISCREPANCY")
+print("=" * 50)
+
+print("📊 CHECKING COMPARISON DATAFRAME:")
+print(comparison_df)
+
+print(f"\n🔍 CHECKING VARIABLES:")
+print(f"   best_model_name: {best_model_name}")
+print(f"   best_model_results keys: {list(best_model_results.keys())}")
+
+if 'model' in best_model_results:
+    actual_model = best_model_results['model']
+    print(f"   actual model type: {type(actual_model).__name__}")
+    print(f"   actual model: {actual_model}")
+
+print(f"\n📋 FINAL_RESULTS KEYS:")
+for name, results in final_results.items():
+    if 'model' in results:
+        model_type = type(results['model']).__name__
+        valid_r2 = results.get('valid_r2', 'N/A')
+        print(f"   {name}: {model_type} (R² = {valid_r2})")
+
+print(f"\n🎯 CORRECT IDENTIFICATION:")
+# Find the actual best model by R² score
+best_r2 = -1
+true_best_name = None
+true_best_model = None
+
+for name, results in final_results.items():
+    if 'valid_r2' in results and results['valid_r2'] > best_r2:
+        best_r2 = results['valid_r2']
+        true_best_name = name
+        true_best_model = results['model']
+
+print(f"   True best model: {true_best_name}")
+print(f"   True best R²: {best_r2:.4f}")
+print(f"   True best type: {type(true_best_model).__name__}")
+
+# %%
+# SECTION 16: IDENTIFY WINNER MODEL AND EXTRACT HYPERPARAMETERS
+# =============================================================================
+print("\n🔍 IDENTIFYING WINNER MODEL FOR PRODUCTION")
+print("=" * 60)
+print("Automatically extracting best model and hyperparameters...")
+
+# Get the best model from previous results
+print(f"\n🏆 WINNER MODEL: {best_model_name}")
+print(f"   📊 Validation R²: {best_model_results['valid_r2']:.4f}")
+print(f"   📊 Test R²: {test_r2:.4f}")
+
+# Extract the actual model object
+winner_model = best_model_results['model']
+print(f"   🤖 Model Type: {type(winner_model).__name__}")
+
+# Extract ALL hyperparameters from the winner model
+print(f"\n🔧 EXTRACTING HYPERPARAMETERS FROM WINNER MODEL")
+print("-" * 50)
+
+winner_params = winner_model.get_params()
+print(f"   📋 Total parameters found: {len(winner_params)}")
+
+# Display all parameters
+print(f"\n📋 COMPLETE HYPERPARAMETER SET:")
+print("-" * 40)
+for param, value in sorted(winner_params.items()):
+    print(f"   {param:<25}: {value}")
+
+# Create model-specific production setup
+model_type = type(winner_model).__name__
+
+if 'XGB' in model_type or 'XGBoost' in str(type(winner_model)):
+    print(f"\n🎯 XGBOOST PRODUCTION SETUP:")
+    print("-" * 30)
+    
+    production_params = {
+        'n_estimators': winner_params.get('n_estimators', 100),
+        'learning_rate': winner_params.get('learning_rate', 0.1),
+        'max_depth': winner_params.get('max_depth', 6),
+        'min_child_weight': winner_params.get('min_child_weight', 1),
+        'colsample_bytree': winner_params.get('colsample_bytree', 1.0),
+        'subsample': winner_params.get('subsample', 1.0),
+        'reg_alpha': winner_params.get('reg_alpha', 0),
+        'reg_lambda': winner_params.get('reg_lambda', 1),
+        'random_state': winner_params.get('random_state', 42),
+        'n_jobs': winner_params.get('n_jobs', -1)
+    }
+    
+    model_import_code = "import xgboost as xgb"
+    model_creation_code = "xgb.XGBRegressor("
+    
+elif 'LGBM' in model_type or 'LightGBM' in model_type:
+    print(f"\n🎯 LIGHTGBM PRODUCTION SETUP:")
+    print("-" * 30)
+    
+    production_params = {
+        'n_estimators': winner_params.get('n_estimators', 100),
+        'learning_rate': winner_params.get('learning_rate', 0.1),
+        'max_depth': winner_params.get('max_depth', -1),
+        'num_leaves': winner_params.get('num_leaves', 31),
+        'min_child_samples': winner_params.get('min_child_samples', 20),
+        'colsample_bytree': winner_params.get('colsample_bytree', 1.0),
+        'subsample': winner_params.get('subsample', 1.0),
+        'reg_alpha': winner_params.get('reg_alpha', 0.0),
+        'reg_lambda': winner_params.get('reg_lambda', 0.0),
+        'random_state': winner_params.get('random_state', 42),
+        'n_jobs': winner_params.get('n_jobs', -1),
+        'verbose': winner_params.get('verbose', -1)
+    }
+    
+    model_import_code = "import lightgbm as lgb"
+    model_creation_code = "lgb.LGBMRegressor("
+    
+elif 'RandomForest' in model_type or 'Forest' in model_type:
+    print(f"\n🎯 RANDOM FOREST PRODUCTION SETUP:")
+    print("-" * 30)
+    
+    production_params = {
+        'n_estimators': winner_params.get('n_estimators', 100),
+        'max_depth': winner_params.get('max_depth', None),
+        'min_samples_split': winner_params.get('min_samples_split', 2),
+        'min_samples_leaf': winner_params.get('min_samples_leaf', 1),
+        'max_features': winner_params.get('max_features', 'sqrt'),
+        'random_state': winner_params.get('random_state', 42),
+        'n_jobs': winner_params.get('n_jobs', -1)
+    }
+    
+    model_import_code = "from sklearn.ensemble import RandomForestRegressor"
+    model_creation_code = "RandomForestRegressor("
+
+else:
+    print(f"\n⚠️  UNKNOWN MODEL TYPE: {model_type}")
+    print(f"   Using generic parameters...")
+    production_params = winner_params
+    model_import_code = f"# Import for {model_type}"
+    model_creation_code = f"{model_type}("
+
+# Display production parameters
+print(f"\n📊 PRODUCTION PARAMETERS:")
+for param, value in production_params.items():
+    print(f"   {param:<20}: {value}")
+
+# Generate exact production code
+print(f"\n💻 EXACT PRODUCTION MODEL CODE:")
+print("=" * 50)
+print(f"{model_import_code}")
+print(f"final_production_model = {model_creation_code}")
+
+for i, (param, value) in enumerate(production_params.items()):
+    comma = "," if i < len(production_params) - 1 else ""
+    if isinstance(value, str):
+        print(f"    {param}='{value}'{comma}")
+    else:
+        print(f"    {param}={value}{comma}")
+print(")")
+
+print(f"\n✅ WINNER MODEL ANALYSIS COMPLETE!")
+print(f"   🏆 Model: {best_model_name}")
+print(f"   🤖 Type: {model_type}")
+print(f"   🔧 Parameters: {len(production_params)} hyperparameters extracted")
+print(f"   📈 Performance: R² = {test_r2:.4f}")
+
+print(f"\n🎯 READY FOR PRODUCTION MODEL TRAINING!")
+print(f"   Copy the generated code above to replace the hardcoded model creation.")
+print("=" * 70)
+
+# %%
+# SECTION 17: FINAL PRODUCTION MODEL TRAINING ON ALL DATA
+# =============================================================================
+print("\n🎯 FINAL PRODUCTION MODEL TRAINING")
+print("=" * 60)
+print("Training final production model using ALL available data...")
+print("Using best hyperparameters from validation phase.")
+
+# Combine all datasets for final training
+print("\n📊 COMBINING ALL DATASETS FOR FINAL TRAINING")
+print("-" * 50)
+
+# Combine train + validation + test for final training
+final_train_df = pd.concat([
+    train_df_enhanced,
+    valid_df_enhanced, 
+    test_df_enhanced
+], ignore_index=True)
+
+print(f"   📈 Original train set: {len(train_df_enhanced):,} samples")
+print(f"   📈 Original valid set: {len(valid_df_enhanced):,} samples") 
+print(f"   📈 Original test set:  {len(test_df_enhanced):,} samples")
+print(f"   🎯 Final training set: {len(final_train_df):,} samples")
+print(f"   📊 Data increase: +{len(final_train_df) - len(train_df_enhanced):,} samples ({((len(final_train_df) / len(train_df_enhanced)) - 1) * 100:.1f}% more data)")
+
+# Prepare final features and target
+X_final = final_train_df[feature_columns].copy()
+y_final = final_train_df['ingresos_reportados'].copy()
+
+print(f"\n   ✅ Final feature matrix: {X_final.shape}")
+print(f"   ✅ Final target vector: {y_final.shape}")
+
+# Apply scaling to final dataset
+print("\n⚖️ SCALING FINAL DATASET")
+print("-" * 40)
+
+from sklearn.preprocessing import RobustScaler
+final_scaler = RobustScaler()
+X_final_scaled = pd.DataFrame(
+    final_scaler.fit_transform(X_final),
+    columns=X_final.columns,
+    index=X_final.index
+)
+print("   ✅ Final dataset scaled using RobustScaler")
+
+# DYNAMIC MODEL CREATION - Extract winner model and parameters
+print(f"\n🔍 EXTRACTING WINNER MODEL CONFIGURATION")
+print("-" * 50)
+
+# Get the best model from previous results
+winner_model = best_model_results['model']
+winner_params = winner_model.get_params()
+model_type = type(winner_model).__name__
+
+print(f"   🏆 Winner Model: {best_model_name}")
+print(f"   🤖 Model Type: {model_type}")
+print(f"   📊 Performance: R² = {test_r2:.4f}")
+
+# Create production model dynamically based on winner type
+print(f"\n🤖 CREATING DYNAMIC PRODUCTION MODEL")
+print("-" * 40)
+
+if 'XGB' in model_type or 'XGBoost' in str(type(winner_model)):
+    import xgboost as xgb
+    final_production_model = xgb.XGBRegressor(**winner_params)
+    algorithm_name = "XGBoost"
+    
+elif 'LGBM' in model_type or 'LightGBM' in model_type:
+    import lightgbm as lgb
+    final_production_model = lgb.LGBMRegressor(**winner_params)
+    algorithm_name = "LightGBM"
+    
+elif 'RandomForest' in model_type or 'Forest' in model_type:
+    from sklearn.ensemble import RandomForestRegressor
+    final_production_model = RandomForestRegressor(**winner_params)
+    algorithm_name = "Random Forest"
+    
+else:
+    # Generic fallback - create same type as winner
+    final_production_model = type(winner_model)(**winner_params)
+    algorithm_name = model_type
+
+print(f"   🎯 Model: {algorithm_name} (Winner from validation)")
+print(f"   📊 Training samples: {len(X_final_scaled):,}")
+print(f"   🔧 Features: {len(feature_columns)}")
+print(f"   📈 Expected performance: R² ≈ {test_r2:.4f}")
+
+# Train the final model
+import time
+start_time = time.time()
+
+final_production_model.fit(X_final_scaled, y_final)
+
+training_time = time.time() - start_time
+print(f"   ⏱️ Training completed in {training_time:.2f} seconds")
+print("   ✅ Final production model training complete!")
+
+# Create comprehensive production artifacts
+print("\n💾 CREATING FINAL PRODUCTION ARTIFACTS")
+print("-" * 50)
+
+from datetime import datetime
+
+final_production_artifacts = {
+    # Core model components for production
+    'final_production_model': final_production_model,
+    'final_scaler': final_scaler,
+    'feature_columns': feature_columns,
+    'model_name': f'{algorithm_name}_Production',
+    
+    # Training information
+    'training_info': {
+        'total_samples': len(final_train_df),
+        'feature_count': len(feature_columns),
+        'training_time_seconds': training_time,
+        'data_sources': 'Combined train + validation + test sets',
+        'training_date': datetime.now().isoformat(),
+        'algorithm': algorithm_name,
+        'winner_model_name': best_model_name
+    },
+    
+    # Model hyperparameters used (FIXED: proper dictionary format)
+    'hyperparameters': winner_params,
+    
+    # Validation performance (from previous testing)
+    'validation_performance': {
+        'test_r2': test_r2,
+        'test_rmse': test_rmse,
+        'test_mae': test_mae,
+        'note': 'Performance measured on separate test set before final training'
+    },
+    
+    # Model metadata
+    'model_version': '1.0_PRODUCTION',
+    'is_production_ready': True,
+    'baseline_performance': {
+        'r2': test_r2,
+        'rmse': test_rmse,
+        'mae': test_mae
+    }
+}
+
+# Save final production model
+final_model_path = data_path + '/final_production_model.pkl'
+joblib.dump(final_production_artifacts, final_model_path)
+
+print(f"   ✅ Final production model saved: final_production_model.pkl")
+print(f"   📦 Package includes: model, scaler, features, hyperparameters, metadata")
+
+# Keep backup of validation model for comparison
+validation_backup = {
+    'validation_model': best_model,
+    'validation_scaler': scaler,
+    'feature_columns': feature_columns,
+    'model_name': best_model_name,
+    'test_performance': {
+        'r2': test_r2,
+        'rmse': test_rmse,
+        'mae': test_mae
+    },
+    'model_version': '1.0_VALIDATION_BACKUP',
+    'note': 'Original model trained only on training set for comparison'
+}
+
+backup_path = data_path + '/validation_model_backup.pkl'
+joblib.dump(validation_backup, backup_path)
+print(f"   ✅ Validation model backup saved: validation_model_backup.pkl")
+
+# Feature importance for final model
+print("\n📊 FINAL MODEL FEATURE IMPORTANCE")
+print("-" * 40)
+
+feature_importance_final = pd.DataFrame({
+    'feature': feature_columns,
+    'importance': final_production_model.feature_importances_
+}).sort_values('importance', ascending=False)
+
+print("   🔝 Top 10 Most Important Features (Final Production Model):")
+for i, (_, row) in enumerate(feature_importance_final.head(10).iterrows(), 1):
+    print(f"   {i:2d}. {row['feature']:<30} {row['importance']:.4f}")
+
+# Save feature importance
+feature_importance_final.to_csv(data_path + '/final_production_feature_importance.csv', index=False)
+print(f"   ✅ Feature importance saved to: final_production_feature_importance.csv")
+
+# Create production prediction template
+production_code = '''
+# PRODUCTION PREDICTION CODE
+# ==========================
+
+import joblib
+import pandas as pd
+import numpy as np
+
+def predict_customer_income(customer_data):
+    """
+    Predict income for new customer using final production model
+    
+    Args:
+        customer_data: dict or DataFrame with customer features
+    
+    Returns:
+        predicted_income: float
+    """
+    
+    # Load production model artifacts
+    artifacts = joblib.load('final_production_model.pkl')
+    model = artifacts['final_production_model']
+    scaler = artifacts['final_scaler']
+    feature_columns = artifacts['feature_columns']
+    
+    # Convert to DataFrame if needed
+    if isinstance(customer_data, dict):
+        df = pd.DataFrame([customer_data])
+    else:
+        df = customer_data.copy()
+    
+    # Select features in correct order
+    X = df[feature_columns]
+    
+    # Apply scaling using fitted scaler
+    X_scaled = scaler.transform(X)
+    
+    # Make prediction
+    prediction = model.predict(X_scaled)
+    
+    return prediction[0] if len(prediction) == 1 else prediction
+
+# Example usage:
+# new_customer = {
+#     'monto_letra': 800,
+#     'edad': 35,
+#     'saldo': 1500,
+#     # ... include all 20 features
+# }
+# predicted_income = predict_customer_income(new_customer)
+# print(f"Predicted income: ${predicted_income:,.2f}")
+'''
+
+with open(data_path + '/production_prediction_code.py', 'w') as f:
+    f.write(production_code)
+print(f"   ✅ Production code template saved: production_prediction_code.py")
+
+# DYNAMIC SUMMARY - Show actual winner model specs
+print("\n🎯 FINAL PRODUCTION DEPLOYMENT SUMMARY")
+print("=" * 60)
+print("🚀 PRODUCTION MODEL READY FOR DEPLOYMENT!")
+print(f"   📁 Production model: final_production_model.pkl")
+print(f"   📁 Validation backup: validation_model_backup.pkl")
+print(f"   📁 Production code: production_prediction_code.py")
+print(f"   📊 Training data: {len(final_train_df):,} customers")
+print(f"   🔧 Features: {len(feature_columns)} variables")
+print(f"   🎯 Algorithm: {algorithm_name}")
+print(f"   📈 Expected performance: R² ≈ {test_r2:.4f}")
+
+print(f"\n📋 MODEL SPECIFICATIONS:")
+# Display key hyperparameters dynamically
+key_params = ['n_estimators', 'learning_rate', 'max_depth', 'colsample_bytree', 'subsample']
+for param in key_params:
+    if param in winner_params:
+        print(f"   • {param}: {winner_params[param]}")
+
+print(f"   • Data increase: {((len(final_train_df) / len(train_df_enhanced)) - 1) * 100:.1f}% more training data")
+
+print(f"\n🚀 DEPLOYMENT CHECKLIST:")
+print(f"   ✅ Model trained on ALL available data")
+print(f"   ✅ Scaler fitted and saved")
+print(f"   ✅ Feature columns preserved")
+print(f"   ✅ Hyperparameters documented")
+print(f"   ✅ Production code template created")
+print(f"   ✅ Validation backup maintained")
+
+print(f"\n🎯 NEXT STEPS:")
+print(f"   1. Deploy final_production_model.pkl to production environment")
+print(f"   2. Implement prediction API using production_prediction_code.py")
+print(f"   3. Monitor model performance on new customer data")
+print(f"   4. Plan model retraining schedule (quarterly/semi-annually)")
+
+print(f"\n✅ FINAL PRODUCTION MODEL TRAINING COMPLETE!")
+print("=" * 80)
+

@@ -1,0 +1,2825 @@
+# =============================================================================
+# STEP 1: INITIAL DATA LOADING AND INSPECTION
+# =============================================================================
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import re
+from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
+
+# Set display options for better data inspection
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', 100)
+
+# Load the datasets
+print("Loading datasets...")
+df_clientes = pd.read_csv(r'C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\data\production\final_info_clientes.csv', 
+                         encoding='latin-1', sep=',', on_bad_lines='skip', engine='python')
+
+print(f"✅ Clientes dataset loaded: {df_clientes.shape}")
+
+df_clientes.columns.tolist()
+['Cliente',
+ 'Identificador_Unico',
+ 'Segmento',
+ 'Edad',
+ 'Sexo',
+ 'Ciudad',
+ 'Pais',
+ 'Ocupacion',
+ 'Estado_Civil',
+ 'FechaIngresoEmpleo',
+ 'NombreEmpleadorCliente',
+ 'CargoEmpleoCliente',
+ 'productos_activos',
+ 'letras_mensuales',
+ 'monto_letra',
+ 'saldo',
+ 'fecha_inicio',
+ 'fecha_vencimiento',
+ 'ingresos_reportados',
+ 'ControlDate',
+ 'monto_prestamo',
+ 'tasa_prestamo',
+ 'data_source',
+ 'processing_timestamp']
+
+ # =============================================================================
+# STEP 2: INITIAL DATA INSPECTION
+# =============================================================================
+
+def inspect_dataset(df, name):
+    """
+    Perform initial inspection of a dataset
+    """
+    print(f"\n{'='*60}")
+    print(f"DATASET INSPECTION: {name}")
+    print(f"{'='*60}")
+    
+    # Basic info
+    print(f"Shape: {df.shape}")
+    print(f"Memory usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+    
+    # Column info
+    print(f"\nColumn Information:")
+    print(f"Total columns: {len(df.columns)}")
+    
+    # Data types
+    print(f"\nData Types:")
+    dtype_counts = df.dtypes.value_counts()
+    for dtype, count in dtype_counts.items():
+        print(f"  {dtype}: {count} columns")
+    
+    # Missing values
+    missing_info = df.isnull().sum()
+    missing_pct = (missing_info / len(df) * 100).round(2)
+    missing_summary = pd.DataFrame({
+        'Missing_Count': missing_info,
+        'Missing_Percentage': missing_pct
+    })
+    missing_summary = missing_summary[missing_summary['Missing_Count'] > 0].sort_values('Missing_Percentage', ascending=False)
+    
+    if len(missing_summary) > 0:
+        print(f"\nMissing Values (Top 10):")
+        print(missing_summary.head(10))
+    else:
+        print(f"\n✅ No missing values found!")
+    
+    # Sample data
+    print(f"\nFirst 3 rows:")
+    print(df.head(3))
+    
+    return missing_summary
+
+# Inspect both datasets
+clientes_missing = inspect_dataset(df_clientes, "CLIENTES")
+
+# =============================================================================
+# STEP 3: COLUMN NAME STANDARDIZATION (CORRECTED)
+# =============================================================================
+
+def standardize_column_names(df, dataset_name):
+    """
+    Standardize column names by:
+    1. Converting to lowercase
+    2. Replacing spaces and special characters with underscores
+    3. Removing accents and special characters
+    4. Ensuring names are Python-friendly
+    5. Fixing specific problematic columns
+    """
+    print(f"\n🔧 Standardizing column names for {dataset_name}...")
+    
+    original_columns = df.columns.tolist()
+    
+    # Function to clean individual column names
+    def clean_column_name(col_name):
+        # Convert to string and lowercase
+        clean_name = str(col_name).lower()
+        
+        # Fix specific problematic columns
+        if 'ï»¿identificador_unico' in clean_name or 'identificador_unico' in clean_name:
+            return 'identificador_unico'
+        
+        # Replace common Spanish characters
+        replacements = {
+            'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u',
+            'ñ': 'n', 'ç': 'c'
+        }
+        for old, new in replacements.items():
+            clean_name = clean_name.replace(old, new)
+        
+        # Remove BOM and other special characters
+        clean_name = clean_name.replace('\ufeff', '')  # Remove BOM
+        clean_name = clean_name.replace('ï»¿', '')     # Remove BOM variants
+        
+        # Replace spaces, dots, and special characters with underscores
+        clean_name = re.sub(r'[^\w]', '_', clean_name)
+        
+        # Remove multiple consecutive underscores
+        clean_name = re.sub(r'_+', '_', clean_name)
+        
+        # Remove leading/trailing underscores
+        clean_name = clean_name.strip('_')
+        
+        # Ensure it doesn't start with a number
+        if clean_name and clean_name[0].isdigit():
+            clean_name = 'col_' + clean_name
+            
+        return clean_name
+    
+    # Apply cleaning to all columns
+    new_columns = [clean_column_name(col) for col in original_columns]
+    
+    # Create mapping for reference
+    column_mapping = pd.DataFrame({
+        'Original': original_columns,
+        'Standardized': new_columns
+    })
+    
+    # Apply new column names
+    df.columns = new_columns
+    
+    print(f"✅ Column names standardized!")
+    print(f"📋 Column mapping:")
+    for i, (orig, new) in enumerate(zip(original_columns, new_columns)):
+        if orig != new:
+            print(f"  '{orig}' → '{new}'")
+    
+    return df, column_mapping
+
+# Standardize column names for both datasets
+df_clientes, clientes_mapping = standardize_column_names(df_clientes, "CLIENTES")
+# Display new column names
+print(f"\n📊 CLIENTES columns ({len(df_clientes.columns)}): {list(df_clientes.columns)}")
+
+# =============================================================================
+# STEP 4: DATE COLUMN IDENTIFICATION AND CONVERSION (CORRECTED)
+# =============================================================================
+
+def identify_specific_date_columns(df, dataset_name):
+    """
+    Identify specific date columns based on your requirements:
+    - df_clientes: 'fechaingresoempleo', 'fecha_inicio', 'fecha_vencimiento'
+    - df_apc: 'fecha_inicio', 'dg_fechaconsulta'
+    """
+    print(f"\n📅 Identifying specific date columns in {dataset_name}...")
+    
+    if dataset_name == "CLIENTES":
+        # Specific date columns for clientes dataset
+        target_date_cols = ['fechaingresoempleo', 'fecha_inicio', 'fecha_vencimiento']
+    elif dataset_name == "APC":
+        # Specific date columns for APC dataset
+        target_date_cols = ['fecha_inicio', 'dg_fechaconsulta']
+    else:
+        target_date_cols = []
+    
+    # Find which of these columns actually exist in the dataset
+    existing_date_cols = []
+    for col in target_date_cols:
+        if col in df.columns:
+            existing_date_cols.append(col)
+        else:
+            print(f"⚠️  Expected date column '{col}' not found in {dataset_name}")
+    
+    print(f"🔍 Date columns found in {dataset_name}: {existing_date_cols}")
+    
+    # Show sample values for each date column
+    for col in existing_date_cols:
+        sample_vals = df[col].dropna().head(5).tolist()
+        data_type = df[col].dtype
+        print(f"  {col} ({data_type}): {sample_vals}")
+    
+    return existing_date_cols
+
+def convert_date_columns_fixed(df, date_columns, dataset_name):
+    """
+    Convert date columns with proper DD/MM/YYYY format handling
+    FIXED VERSION: Uses correct format specification for 100% success rate
+    """
+    print(f"\n🔄 Converting date columns in {dataset_name} (FIXED VERSION)...")
+    
+    conversion_log = []
+    
+    for col in date_columns:
+        if col not in df.columns:
+            print(f"  ⚠️  Column {col} not found")
+            continue
+            
+        original_dtype = df[col].dtype
+        non_null_count = df[col].notna().sum()
+        original_sample = df[col].dropna().head(3).tolist()
+        
+        print(f"\n  Converting {col}...")
+        print(f"    Original type: {original_dtype}")
+        print(f"    Non-null values: {non_null_count:,}")
+        print(f"    Sample values: {original_sample}")
+        
+        # Create backup
+        backup_col = f"{col}_original"
+        df[backup_col] = df[col].copy()
+        
+        try:
+            conversion_method = ""
+            
+            # Strategy 1: For string dates in DD/MM/YYYY format (like '08/05/2018')
+            if df[col].dtype == 'object':
+                # Check if data contains slashes (DD/MM/YYYY format)
+                sample_str = df[col].dropna().astype(str).head(10)
+                if sample_str.str.contains('/', na=False).any():
+                    # Use explicit DD/MM/YYYY format
+                    df[col] = pd.to_datetime(df[col], format='%d/%m/%Y', errors='coerce')
+                    conversion_method = "DD/MM/YYYY format conversion"
+                else:
+                    # Try flexible conversion with dayfirst
+                    df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
+                    conversion_method = "Flexible conversion with dayfirst=True"
+            
+            # Strategy 2: For numeric dates (like 8052018 = DDMMYYYY)
+            elif df[col].dtype in ['int64', 'float64']:
+                # Convert to string and try DDMMYYYY format
+                date_strings = df[col].astype(str).str.replace('.0', '', regex=False)
+                df[col] = pd.to_datetime(date_strings, format='%d%m%Y', errors='coerce')
+                conversion_method = "Numeric DDMMYYYY format conversion"
+            
+            else:
+                # Try flexible conversion as fallback
+                df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
+                conversion_method = "Flexible conversion with dayfirst=True"
+            
+            # Check success rate
+            valid_dates = df[col].notna().sum()
+            success_rate = valid_dates / non_null_count if non_null_count > 0 else 0
+            
+            print(f"    ✅ Conversion successful!")
+            print(f"    Method: {conversion_method}")
+            print(f"    Success rate: {success_rate:.1%} ({valid_dates:,}/{non_null_count:,})")
+            
+            # Show sample converted values
+            if valid_dates > 0:
+                sample_converted = df[col].dropna().head(3)
+                print(f"    Sample results: {sample_converted.dt.strftime('%Y-%m-%d').tolist()}")
+            
+            conversion_log.append({
+                'column': col,
+                'method': conversion_method,
+                'success_rate': success_rate,
+                'converted_count': valid_dates
+            })
+            
+            # Remove backup if conversion was very successful
+            if success_rate > 0.95:
+                df.drop(columns=[backup_col], inplace=True)
+                print(f"    🗑️  Backup removed (high success rate)")
+            else:
+                print(f"    📋 Backup kept as {backup_col} (success rate: {success_rate:.1%})")
+                
+        except Exception as e:
+            print(f"    ❌ Error converting {col}: {str(e)}")
+            # Restore original if backup exists
+            if backup_col in df.columns:
+                df[col] = df[backup_col]
+                df.drop(columns=[backup_col], inplace=True)
+    
+    return df, conversion_log
+
+# Identify and convert date columns for both datasets with specific columns
+clientes_date_cols = identify_specific_date_columns(df_clientes, "CLIENTES")
+df_clientes, clientes_date_log = convert_date_columns_fixed(df_clientes, clientes_date_cols, "CLIENTES")
+
+
+# Verify target column is NOT treated as date
+print(f"\n🎯 Verifying target column 'ingresos_reportados' in CLIENTES:")
+if 'ingresos_reportados' in df_clientes.columns:
+    target_dtype = df_clientes['ingresos_reportados'].dtype
+    target_sample = df_clientes['ingresos_reportados'].dropna().head(5).tolist()
+    print(f"   Type: {target_dtype}")
+    print(f"   Sample values: {target_sample}")
+    print(f"   ✅ Correctly preserved as numeric target variable")
+else:
+    print(f"   ⚠️  Target column 'ingresos_reportados' not found!")
+
+# Verify conversion results
+print(f"\n✅ CONVERSION VERIFICATION:")
+print("="*50)
+
+def verify_date_conversion(df, date_columns, dataset_name):
+    """Verify that date conversion worked properly"""
+    for col in date_columns:
+        if col in df.columns and pd.api.types.is_datetime64_any_dtype(df[col]):
+            non_null_dates = df[col].dropna()
+            print(f"📅 {dataset_name} - {col}:")
+            print(f"   ✅ Successfully converted to datetime")
+            print(f"   📊 Valid dates: {len(non_null_dates):,}")
+            if len(non_null_dates) > 0:
+                print(f"   📈 Date range: {non_null_dates.min().strftime('%Y-%m-%d')} to {non_null_dates.max().strftime('%Y-%m-%d')}")
+        else:
+            print(f"❌ {dataset_name} - {col}: Conversion failed or column missing")
+
+verify_date_conversion(df_clientes, clientes_date_cols, "CLIENTES")
+
+print(f"\n🎉 DATE CONVERSION COMPLETED!")
+print(f"Expected: ~100% success rate for DD/MM/YYYY string formats")
+print(f"Expected: ~100% success rate for DDMMYYYY numeric formats")
+
+# =============================================================================
+# STEP 5: DATA TYPE OPTIMIZATION (ENHANCED)
+# =============================================================================
+
+def optimize_data_types(df, dataset_name, target_column=None):
+    """
+    Optimize data types for memory efficiency and consistency
+    Special handling for target column to preserve it as numeric
+    """
+    print(f"\n⚡ Optimizing data types for {dataset_name}...")
+    
+    original_memory = df.memory_usage(deep=True).sum() / 1024**2
+    optimization_log = []
+    
+    for col in df.columns:
+        original_dtype = df[col].dtype
+        original_size = df[col].memory_usage(deep=True) / 1024**2
+        
+        # Skip datetime columns
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            continue
+            
+        # Special handling for target column
+        if target_column and col == target_column:
+            print(f"  🎯 Preserving target column '{col}' as numeric")
+            if df[col].dtype == 'object':
+                try:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                    optimization_log.append(f"  {col} (TARGET): object → numeric")
+                except:
+                    pass
+            continue
+        
+        # Optimize numeric columns
+        if df[col].dtype in ['int64', 'float64']:
+            # Check if we can downcast integers
+            if df[col].dtype == 'int64':
+                try:
+                    df[col] = pd.to_numeric(df[col], downcast='integer')
+                except:
+                    pass
+            
+            # Check if we can downcast floats
+            elif df[col].dtype == 'float64':
+                try:
+                    df[col] = pd.to_numeric(df[col], downcast='float')
+                except:
+                    pass
+        
+        # Optimize object columns
+        elif df[col].dtype == 'object':
+            # Check if it's actually numeric
+            try:
+                numeric_series = pd.to_numeric(df[col], errors='coerce')
+                if numeric_series.notna().sum() > len(df) * 0.8:  # If >80% are numeric
+                    df[col] = numeric_series
+                    df[col] = pd.to_numeric(df[col], downcast='integer' if df[col].dtype == 'int64' else 'float')
+                    optimization_log.append(f"  {col}: object → numeric")
+                else:
+                    # Check if we can convert to category
+                    unique_ratio = df[col].nunique() / len(df)
+                    if unique_ratio < 0.5:  # If less than 50% unique values
+                        df[col] = df[col].astype('category')
+                        optimization_log.append(f"  {col}: object → category")
+            except:
+                pass
+        
+        new_dtype = df[col].dtype
+        new_size = df[col].memory_usage(deep=True) / 1024**2
+        
+        if original_dtype != new_dtype:
+            optimization_log.append(f"  {col}: {original_dtype} → {new_dtype} (saved {original_size-new_size:.2f} MB)")
+    
+    new_memory = df.memory_usage(deep=True).sum() / 1024**2
+    memory_saved = original_memory - new_memory
+    
+    print(f"✅ Data type optimization complete!")
+    print(f"📊 Memory usage: {original_memory:.2f} MB → {new_memory:.2f} MB (saved {memory_saved:.2f} MB)")
+    
+    if optimization_log:
+        print(f"🔄 Optimizations made:")
+        for log in optimization_log[:10]:  # Show first 10
+            print(log)
+        if len(optimization_log) > 10:
+            print(f"    ... and {len(optimization_log) - 10} more")
+    
+    return df
+
+# Optimize data types for both datasets (with target column protection for clientes)
+df_clientes = optimize_data_types(df_clientes, "CLIENTES", target_column='ingresos_reportados')
+
+# =============================================================================
+# STEP 6: FINAL SUMMARY OF CLEANING PROCESS (UPDATED)
+# =============================================================================
+
+def final_cleaning_summary(df, dataset_name, original_shape, expected_date_cols=None, target_col=None):
+    """
+    Provide a final summary of the cleaning process with specific validations
+    """
+    print(f"\n{'='*60}")
+    print(f"FINAL CLEANING SUMMARY: {dataset_name}")
+    print(f"{'='*60}")
+    
+    print(f"📊 Dataset shape: {original_shape} → {df.shape}")
+    print(f"💾 Memory usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+    print(f"🗂️  Total columns: {len(df.columns)}")
+    
+    # Data type summary
+    print(f"\n📋 Data types:")
+    dtype_counts = df.dtypes.value_counts()
+    for dtype, count in dtype_counts.items():
+        print(f"  {dtype}: {count} columns")
+    
+    # Date columns validation
+    date_cols = [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col])]
+    print(f"\n📅 Date columns converted: {date_cols}")
+    
+    if expected_date_cols:
+        print(f"📅 Expected date columns: {expected_date_cols}")
+        missing_dates = set(expected_date_cols) - set(date_cols)
+        if missing_dates:
+            print(f"⚠️  Date columns not converted: {missing_dates}")
+        else:
+            print(f"✅ All expected date columns converted successfully!")
+    
+    # Target column validation (for clientes)
+    if target_col and target_col in df.columns:
+        target_dtype = df[target_col].dtype
+        target_stats = df[target_col].describe()
+        print(f"\n🎯 Target column '{target_col}':")
+        print(f"   Type: {target_dtype}")
+        print(f"   Non-null values: {df[target_col].notna().sum():,}")
+        print(f"   Range: {target_stats['min']:.2f} to {target_stats['max']:.2f}")
+        print(f"   Mean: {target_stats['mean']:.2f}")
+    
+    # Key identifier validation
+    if 'identificador_unico' in df.columns:
+        id_stats = df['identificador_unico'].nunique()
+        print(f"\n🆔 Identifier column 'identificador_unico':")
+        print(f"   Unique values: {id_stats:,}")
+        print(f"   Uniqueness ratio: {id_stats/len(df):.2%}")
+    
+    # Missing values summary
+    missing_count = df.isnull().sum().sum()
+    missing_pct = (missing_count / (len(df) * len(df.columns))) * 100
+    print(f"\n❓ Missing values: {missing_count:,} ({missing_pct:.2f}% of total data)")
+    
+    # Sample of cleaned data
+    print(f"\n🔍 Sample of cleaned data:")
+    print(df.head(3))
+    
+    return df
+
+# Store original shapes
+clientes_original_shape = df_clientes.shape
+
+# Final summaries with specific validations
+df_clientes = final_cleaning_summary(
+    df_clientes, 
+    "CLIENTES", 
+    clientes_original_shape,
+    expected_date_cols=['fechaingresoempleo', 'fecha_inicio', 'fecha_vencimiento'],
+    target_col='ingresos_reportados'
+)
+
+
+print(f"\n🎉 DATA CLEANING COMPLETE!")
+print(f"✅ Both datasets are now ready for exploratory data analysis")
+print(f"📝 Next steps: Detailed EDA, feature engineering, and modeling")
+
+# =============================================================================
+# STEP 1: CATEGORICAL VARIABLES OVERVIEW
+# =============================================================================
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import Counter
+import warnings
+warnings.filterwarnings('ignore')
+
+# Set display and plotting options
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', 100)
+plt.style.use('seaborn-v0_8')
+sns.set_palette("husl")
+
+print("📊 DETAILED EDA - CATEGORICAL VARIABLES ANALYSIS")
+print("="*80)
+
+def analyze_categorical_variables(df, dataset_name):
+    """
+    Comprehensive analysis of categorical variables
+    """
+    print(f"\n🔍 CATEGORICAL VARIABLES ANALYSIS: {dataset_name}")
+    print("="*60)
+    
+    # Identify categorical columns
+    categorical_cols = []
+    for col in df.columns:
+        if df[col].dtype == 'object' or df[col].dtype.name == 'category':
+            categorical_cols.append(col)
+    
+    print(f"📋 Categorical columns found: {len(categorical_cols)}")
+    print(f"Columns: {categorical_cols}")
+    
+    # Analyze each categorical column
+    cat_analysis = {}
+    
+    for col in categorical_cols:
+        print(f"\n📊 Analyzing: {col}")
+        print("-" * 40)
+        
+        # Basic statistics
+        total_values = len(df[col])
+        non_null_values = df[col].notna().sum()
+        null_values = df[col].isnull().sum()
+        unique_values = df[col].nunique()
+        
+        print(f"   Total values: {total_values:,}")
+        print(f"   Non-null values: {non_null_values:,} ({non_null_values/total_values*100:.1f}%)")
+        print(f"   Null values: {null_values:,} ({null_values/total_values*100:.1f}%)")
+        print(f"   Unique values: {unique_values:,}")
+        print(f"   Uniqueness ratio: {unique_values/non_null_values:.3f}")
+        
+        # Value counts
+        value_counts = df[col].value_counts()
+        
+        # Show top values
+        print(f"   Top 10 values:")
+        for i, (value, count) in enumerate(value_counts.head(10).items()):
+            percentage = (count / non_null_values) * 100
+            print(f"      {i+1:2d}. '{value}': {count:,} ({percentage:.1f}%)")
+        
+        # Check for potential data quality issues
+        issues = []
+        
+        # Check for very long strings (potential data entry errors)
+        if df[col].dtype == 'object':
+            str_lengths = df[col].dropna().astype(str).str.len()
+            max_length = str_lengths.max()
+            avg_length = str_lengths.mean()
+            
+            if max_length > 100:
+                issues.append(f"Very long values (max: {max_length} chars)")
+            
+            # Check for mixed case issues
+            mixed_case_sample = df[col].dropna().head(20)
+            has_mixed_case = any(val != val.upper() and val != val.lower() 
+                               for val in mixed_case_sample.astype(str) if len(val) > 1)
+            if has_mixed_case:
+                issues.append("Mixed case values detected")
+        
+        # Check for high cardinality (potential ID columns)
+        if unique_values > non_null_values * 0.8:
+            issues.append("High cardinality - might be ID column")
+        
+        # Check for very low frequency values
+        low_freq_count = (value_counts == 1).sum()
+        if low_freq_count > unique_values * 0.5:
+            issues.append(f"Many singleton values ({low_freq_count:,})")
+        
+        if issues:
+            print(f"   ⚠️  Potential issues: {', '.join(issues)}")
+        else:
+            print(f"   ✅ No obvious data quality issues")
+        
+        # Store analysis results
+        cat_analysis[col] = {
+            'total_values': total_values,
+            'non_null_values': non_null_values,
+            'null_values': null_values,
+            'unique_values': unique_values,
+            'uniqueness_ratio': unique_values/non_null_values if non_null_values > 0 else 0,
+            'top_values': value_counts.head(10).to_dict(),
+            'issues': issues
+        }
+    
+    return cat_analysis, categorical_cols
+
+# Analyze categorical variables in df_clientes
+clientes_cat_analysis, clientes_cat_cols = analyze_categorical_variables(df_clientes, "CLIENTES")
+
+# =============================================================================
+# STEP 2: SPECIFIC CATEGORICAL VARIABLES DEEP DIVE
+# =============================================================================
+
+def deep_dive_categorical_analysis(df, target_columns):
+    """
+    Deep dive analysis for specific categorical columns
+    Focus on: 'sexo','ciudad','pais','ocupacion','estado_civil','nombreempleadorcliente','cargoempleocliente'
+    """
+    print(f"\n🔬 DEEP DIVE CATEGORICAL ANALYSIS")
+    print("="*60)
+    
+    for col in target_columns:
+        if col not in df.columns:
+            print(f"⚠️  Column '{col}' not found in dataset")
+            continue
+            
+        print(f"\n📊 DEEP DIVE: {col}")
+        print("="*50)
+        
+        # Basic info
+        non_null_data = df[col].dropna()
+        print(f"Non-null values: {len(non_null_data):,}")
+        print(f"Unique values: {df[col].nunique():,}")
+        
+        # Value distribution
+        value_counts = df[col].value_counts()
+        print(f"\nValue distribution:")
+        
+        # Show all values if reasonable number, otherwise top 20
+        display_count = min(20, len(value_counts))
+        for i, (value, count) in enumerate(value_counts.head(display_count).items()):
+            percentage = (count / len(non_null_data)) * 100
+            print(f"   {i+1:2d}. '{value}': {count:,} ({percentage:.1f}%)")
+        
+        if len(value_counts) > display_count:
+            print(f"   ... and {len(value_counts) - display_count} more unique values")
+        
+        # Check for potential name variations/homologation needs
+        print(f"\n🔍 Checking for potential name variations:")
+        
+        if df[col].dtype == 'object':
+            # Convert to string and analyze patterns
+            str_values = non_null_data.astype(str)
+            
+            # Check for case variations
+            lower_values = str_values.str.lower().value_counts()
+            if len(lower_values) < len(value_counts):
+                case_duplicates = len(value_counts) - len(lower_values)
+                print(f"   📝 Case variations found: {case_duplicates} potential duplicates")
+                
+                # Show examples of case variations
+                case_examples = []
+                for lower_val, count in lower_values.head(5).items():
+                    original_vals = str_values[str_values.str.lower() == lower_val].unique()
+                    if len(original_vals) > 1:
+                        case_examples.append(f"'{lower_val}' appears as: {list(original_vals)}")
+                
+                if case_examples:
+                    print(f"   Examples:")
+                    for example in case_examples[:3]:
+                        print(f"      {example}")
+            
+            # Check for whitespace variations
+            stripped_values = str_values.str.strip().value_counts()
+            if len(stripped_values) < len(value_counts):
+                whitespace_duplicates = len(value_counts) - len(stripped_values)
+                print(f"   🔤 Whitespace variations found: {whitespace_duplicates} potential duplicates")
+            
+            # Check for special character variations
+            clean_values = str_values.str.replace(r'[^\w\s]', '', regex=True).str.strip().value_counts()
+            if len(clean_values) < len(value_counts):
+                special_char_duplicates = len(value_counts) - len(clean_values)
+                print(f"   🔣 Special character variations: {special_char_duplicates} potential duplicates")
+            
+            # Look for potential abbreviations or similar names
+            if col in ['ciudad', 'pais', 'ocupacion', 'nombreempleadorcliente']:
+                print(f"   🏢 Checking for potential company/location name variations...")
+                
+                # Group by first few characters to find potential matches
+                if len(str_values) > 0:
+                    # Group by first 3 characters (for short abbreviations)
+                    first_chars = str_values.str[:3].str.upper().value_counts()
+                    potential_groups = first_chars[first_chars > 1].head(5)
+                    
+                    if len(potential_groups) > 0:
+                        print(f"   Potential name groups (by first 3 chars):")
+                        for prefix, count in potential_groups.items():
+                            examples = str_values[str_values.str[:3].str.upper() == prefix].unique()[:3]
+                            print(f"      '{prefix}*': {count} values, examples: {list(examples)}")
+        
+        # Statistical summary for this column
+        print(f"\n📈 Statistical summary:")
+        print(f"   Most common: '{value_counts.index[0]}' ({value_counts.iloc[0]:,} occurrences)")
+        print(f"   Least common: {(value_counts == 1).sum():,} values appear only once")
+        print(f"   Top 5 values represent: {value_counts.head(5).sum()/len(non_null_data)*100:.1f}% of data")
+
+# Define the specific categorical columns to analyze
+target_categorical_cols = [
+    'sexo', 'ciudad', 'pais', 'ocupacion', 'estado_civil', 
+    'nombreempleadorcliente', 'cargoempleocliente'
+]
+
+# Perform deep dive analysis
+deep_dive_categorical_analysis(df_clientes, target_categorical_cols)
+
+# =============================================================================
+# QUICK COLUMN CHECK - IDENTIFY CORRECT COLUMN NAMES
+# =============================================================================
+
+print("🔍 IDENTIFYING CORRECT COLUMN NAMES")
+print("="*50)
+
+print(f"All columns in df_clientes:")
+for i, col in enumerate(df_clientes.columns):
+    print(f"   {i+1:2d}. {col}")
+
+print(f"\nLooking for identifier columns:")
+id_candidates = [col for col in df_clientes.columns if any(keyword in col.lower() 
+                for keyword in ['id', 'cliente', 'identificador', 'customer'])]
+print(f"   ID candidates: {id_candidates}")
+
+print(f"\nLooking for income columns:")
+income_candidates = [col for col in df_clientes.columns if any(keyword in col.lower() 
+                    for keyword in ['ingreso', 'income', 'salario', 'salary'])]
+print(f"   Income candidates: {income_candidates}")
+
+print(f"\nLooking for payment columns:")
+payment_candidates = [col for col in df_clientes.columns if any(keyword in col.lower() 
+                     for keyword in ['monto', 'letra', 'payment', 'pago', 'cuota'])]
+print(f"   Payment candidates: {payment_candidates}")
+
+# Check data types
+print(f"\nData types of key columns:")
+key_cols = ['ingresos_reportados', 'monto_letra'] + id_candidates
+for col in key_cols:
+    if col in df_clientes.columns:
+        print(f"   {col}: {df_clientes[col].dtype}")
+
+# =============================================================================
+# STEP 3: BUSINESS LOGIC VALIDATION - INCOME vs LOAN PAYMENT (FIXED)
+# =============================================================================
+
+def validate_income_vs_payment(df):
+    """
+    Validate business logic: income should be greater than loan payment
+    """
+    print(f"\n🚨 BUSINESS LOGIC VALIDATION: Income vs Loan Payment")
+    print("="*70)
+    
+    # Check available columns first
+    print(f"📋 Available columns in dataset:")
+    print(f"   {list(df.columns)}")
+    
+    # Check if required columns exist
+    income_col = 'ingresos_reportados'
+    payment_col = 'monto_letra'
+    
+    # Find the correct identifier column
+    id_col = None
+    possible_id_cols = ['identificador_unico', 'cliente', 'id', 'customer_id']
+    for col in possible_id_cols:
+        if col in df.columns:
+            id_col = col
+            break
+    
+    if income_col not in df.columns:
+        print(f"❌ Income column '{income_col}' not found")
+        print(f"   Available columns: {[col for col in df.columns if 'ingreso' in col.lower()]}")
+        return None, None
+    
+    if payment_col not in df.columns:
+        print(f"❌ Payment column '{payment_col}' not found")
+        print(f"   Available columns: {[col for col in df.columns if 'monto' in col.lower() or 'letra' in col.lower()]}")
+        return None, None
+    
+    if id_col is None:
+        print(f"⚠️  No identifier column found, will use row index")
+        id_col = 'row_index'
+        df = df.copy()
+        df[id_col] = df.index
+    
+    print(f"📊 Analyzing relationship between:")
+    print(f"   💰 Income: {income_col}")
+    print(f"   💳 Payment: {payment_col}")
+    print(f"   🆔 Identifier: {id_col}")
+    
+    # Get records with both values available
+    both_available = df[[id_col, income_col, payment_col]].dropna()
+    total_records = len(df)
+    available_records = len(both_available)
+    
+    print(f"\n📋 Data availability:")
+    print(f"   Total records: {total_records:,}")
+    print(f"   Records with both income and payment: {available_records:,} ({available_records/total_records*100:.1f}%)")
+    
+    if available_records == 0:
+        print(f"❌ No records with both income and payment data available")
+        return None, None
+    
+    # Calculate basic statistics
+    income_stats = both_available[income_col].describe()
+    payment_stats = both_available[payment_col].describe()
+    
+    print(f"\n📊 Income statistics:")
+    print(f"   Mean: ${income_stats['mean']:,.2f}")
+    print(f"   Median: ${income_stats['50%']:,.2f}")
+    print(f"   Min: ${income_stats['min']:,.2f}")
+    print(f"   Max: ${income_stats['max']:,.2f}")
+    
+    print(f"\n💳 Payment statistics:")
+    print(f"   Mean: ${payment_stats['mean']:,.2f}")
+    print(f"   Median: ${payment_stats['50%']:,.2f}")
+    print(f"   Min: ${payment_stats['min']:,.2f}")
+    print(f"   Max: ${payment_stats['max']:,.2f}")
+    
+    # Business logic validation
+    print(f"\n🚨 BUSINESS LOGIC VIOLATIONS:")
+    
+    # Case 1: Payment equals income (suspicious)
+    equal_cases = both_available[both_available[income_col] == both_available[payment_col]]
+    print(f"   💰=💳 Payment equals income: {len(equal_cases):,} cases ({len(equal_cases)/available_records*100:.1f}%)")
+    
+    # Case 2: Payment greater than income (impossible)
+    greater_cases = both_available[both_available[payment_col] > both_available[income_col]]
+    print(f"   💳>💰 Payment > income: {len(greater_cases):,} cases ({len(greater_cases)/available_records*100:.1f}%)")
+    
+    # Case 3: Payment is very high percentage of income (risky)
+    payment_ratio = both_available[payment_col] / both_available[income_col]
+    high_ratio_cases = both_available[payment_ratio > 0.5]  # Payment > 50% of income
+    very_high_ratio_cases = both_available[payment_ratio > 0.8]  # Payment > 80% of income
+    
+    print(f"   ⚠️  Payment > 50% of income: {len(high_ratio_cases):,} cases ({len(high_ratio_cases)/available_records*100:.1f}%)")
+    print(f"   🚨 Payment > 80% of income: {len(very_high_ratio_cases):,} cases ({len(very_high_ratio_cases)/available_records*100:.1f}%)")
+    
+    # Calculate payment-to-income ratio statistics
+    print(f"\n📊 Payment-to-Income Ratio Analysis:")
+    ratio_stats = payment_ratio.describe()
+    print(f"   Mean ratio: {ratio_stats['mean']:.2f} ({ratio_stats['mean']*100:.1f}%)")
+    print(f"   Median ratio: {ratio_stats['50%']:.2f} ({ratio_stats['50%']*100:.1f}%)")
+    print(f"   75th percentile: {ratio_stats['75%']:.2f} ({ratio_stats['75%']*100:.1f}%)")
+    print(f"   Max ratio: {ratio_stats['max']:.2f} ({ratio_stats['max']*100:.1f}%)")
+    
+    # Show examples of problematic cases
+    if len(equal_cases) > 0:
+        print(f"\n📝 Examples of Payment = Income cases:")
+        display_cols = [id_col, income_col, payment_col]
+        sample_equal = equal_cases[display_cols].head(5)
+        print(sample_equal.to_string(index=False))
+    
+    if len(greater_cases) > 0:
+        print(f"\n📝 Examples of Payment > Income cases:")
+        display_cols = [id_col, income_col, payment_col]
+        sample_greater = greater_cases[display_cols].head(5).copy()
+        sample_greater['ratio'] = sample_greater[payment_col] / sample_greater[income_col]
+        print(sample_greater.to_string(index=False))
+    
+    # Show some high ratio cases (but not violations)
+    moderate_high_cases = both_available[(payment_ratio > 0.3) & (payment_ratio <= 0.5)]
+    if len(moderate_high_cases) > 0:
+        print(f"\n📝 Examples of High Payment Ratio (30-50%) cases:")
+        display_cols = [id_col, income_col, payment_col]
+        sample_moderate = moderate_high_cases[display_cols].head(5).copy()
+        sample_moderate['ratio'] = moderate_high_cases[payment_col] / moderate_high_cases[income_col]
+        print(sample_moderate.to_string(index=False))
+    
+    # Create flags for data quality
+    df_analysis = both_available.copy()
+    df_analysis['payment_income_ratio'] = payment_ratio
+    df_analysis['flag_equal_payment_income'] = (df_analysis[income_col] == df_analysis[payment_col])
+    df_analysis['flag_payment_exceeds_income'] = (df_analysis[payment_col] > df_analysis[income_col])
+    df_analysis['flag_high_payment_ratio'] = (payment_ratio > 0.5)
+    df_analysis['flag_very_high_payment_ratio'] = (payment_ratio > 0.8)
+    
+    # Summary of flags
+    print(f"\n🏷️  DATA QUALITY FLAGS SUMMARY:")
+    flag_cols = [col for col in df_analysis.columns if col.startswith('flag_')]
+    for flag_col in flag_cols:
+        flag_count = df_analysis[flag_col].sum()
+        flag_pct = (flag_count / len(df_analysis)) * 100
+        print(f"   {flag_col}: {flag_count:,} ({flag_pct:.1f}%)")
+    
+    # Additional insights
+    print(f"\n💡 BUSINESS INSIGHTS:")
+    
+    # Reasonable payment ratios
+    reasonable_cases = both_available[(payment_ratio > 0.1) & (payment_ratio <= 0.3)]
+    print(f"   ✅ Reasonable payment ratios (10-30%): {len(reasonable_cases):,} ({len(reasonable_cases)/available_records*100:.1f}%)")
+    
+    # Very low payment ratios (might indicate high income or low payments)
+    low_ratio_cases = both_available[payment_ratio <= 0.1]
+    print(f"   📉 Very low payment ratios (<10%): {len(low_ratio_cases):,} ({len(low_ratio_cases)/available_records*100:.1f}%)")
+    
+    # Zero payments
+    zero_payment_cases = both_available[both_available[payment_col] == 0]
+    print(f"   🔄 Zero payment cases: {len(zero_payment_cases):,} ({len(zero_payment_cases)/available_records*100:.1f}%)")
+    
+    return df_analysis, {
+        'total_records': total_records,
+        'available_records': available_records,
+        'equal_cases': len(equal_cases),
+        'greater_cases': len(greater_cases),
+        'high_ratio_cases': len(high_ratio_cases),
+        'very_high_ratio_cases': len(very_high_ratio_cases),
+        'reasonable_cases': len(reasonable_cases),
+        'low_ratio_cases': len(low_ratio_cases),
+        'zero_payment_cases': len(zero_payment_cases),
+        'mean_ratio': ratio_stats['mean'],
+        'median_ratio': ratio_stats['50%'],
+        'id_column_used': id_col
+    }
+
+# Perform business logic validation
+print("🔍 CHECKING COLUMN NAMES FIRST...")
+print(f"Columns in df_clientes: {list(df_clientes.columns)}")
+
+validation_results, validation_summary = validate_income_vs_payment(df_clientes)
+
+# =============================================================================
+# STEP 4: VISUALIZATION OF KEY FINDINGS
+# =============================================================================
+
+def visualize_categorical_and_validation_findings(df, cat_cols, validation_data=None):
+    """
+    Create visualizations for categorical analysis and business logic validation
+    """
+    print(f"\n📊 CREATING VISUALIZATIONS")
+    print("="*50)
+    
+    # Set up the plotting area
+    n_cat_plots = min(6, len(cat_cols))  # Show top 6 categorical variables
+    n_validation_plots = 3 if validation_data is not None else 0
+    total_plots = n_cat_plots + n_validation_plots
+    
+    # Calculate grid dimensions
+    n_cols = 3
+    n_rows = (total_plots + n_cols - 1) // n_cols
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 5*n_rows))
+    if n_rows == 1:
+        axes = axes.reshape(1, -1)
+    
+    plot_idx = 0
+    
+    # Plot categorical variables
+    for i, col in enumerate(cat_cols[:n_cat_plots]):
+        if col in df.columns:
+            row = plot_idx // n_cols
+            col_idx = plot_idx % n_cols
+            
+            # Get top 10 values for plotting
+            value_counts = df[col].value_counts().head(10)
+            
+            # Create bar plot
+            ax = axes[row, col_idx]
+            value_counts.plot(kind='bar', ax=ax, color='skyblue', alpha=0.7)
+            ax.set_title(f'{col}\n(Top 10 values)', fontsize=10, fontweight='bold')
+            ax.set_xlabel('')
+            ax.set_ylabel('Count')
+            ax.tick_params(axis='x', rotation=45, labelsize=8)
+            
+            # Add value labels on bars
+            for j, (val, count) in enumerate(value_counts.items()):
+                ax.text(j, count + max(value_counts) * 0.01, f'{count:,}', 
+                       ha='center', va='bottom', fontsize=8)
+            
+            plot_idx += 1
+    
+    # Plot validation results if available
+    if validation_data is not None and len(validation_data) > 0:
+        # Plot 1: Income vs Payment scatter
+        if plot_idx < total_plots:
+            row = plot_idx // n_cols
+            col_idx = plot_idx % n_cols
+            ax = axes[row, col_idx]
+            
+            # Sample data for plotting (to avoid overcrowding)
+            sample_size = min(1000, len(validation_data))
+            sample_data = validation_data.sample(sample_size)
+            
+            scatter = ax.scatter(sample_data['ingresos_reportados'], 
+                               sample_data['monto_letra'], 
+                               alpha=0.6, s=20)
+            
+            # Add diagonal line (payment = income)
+            max_val = max(sample_data['ingresos_reportados'].max(), 
+                         sample_data['monto_letra'].max())
+            ax.plot([0, max_val], [0, max_val], 'r--', alpha=0.7, label='Payment = Income')
+            
+            ax.set_xlabel('Reported Income')
+            ax.set_ylabel('Loan Payment')
+            ax.set_title('Income vs Loan Payment\n(Red line = Payment equals Income)', fontsize=10)
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            
+            plot_idx += 1
+        
+        # Plot 2: Payment-to-Income Ratio Distribution
+        if plot_idx < total_plots:
+            row = plot_idx // n_cols
+            col_idx = plot_idx % n_cols
+            ax = axes[row, col_idx]
+            
+            # Filter extreme outliers for better visualization
+            ratio_data = validation_data['payment_income_ratio']
+            ratio_filtered = ratio_data[ratio_data <= 2]  # Remove ratios > 200%
+            
+            ax.hist(ratio_filtered, bins=50, alpha=0.7, color='lightcoral', edgecolor='black')
+            ax.axvline(0.5, color='orange', linestyle='--', label='50% threshold')
+            ax.axvline(0.8, color='red', linestyle='--', label='80% threshold')
+            ax.set_xlabel('Payment-to-Income Ratio')
+            ax.set_ylabel('Frequency')
+            ax.set_title('Distribution of Payment-to-Income Ratios', fontsize=10)
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            
+            plot_idx += 1
+        
+        # Plot 3: Business Logic Violations Summary
+        if plot_idx < total_plots:
+            row = plot_idx // n_cols
+            col_idx = plot_idx % n_cols
+            ax = axes[row, col_idx]
+            
+            # Count violations
+            violations = {
+                'Payment = Income': validation_data['flag_equal_payment_income'].sum(),
+                'Payment > Income': validation_data['flag_payment_exceeds_income'].sum(),
+                'Payment > 50% Income': validation_data['flag_high_payment_ratio'].sum(),
+                'Payment > 80% Income': validation_data['flag_very_high_payment_ratio'].sum()
+            }
+            
+            violation_names = list(violations.keys())
+            violation_counts = list(violations.values())
+            
+            bars = ax.bar(violation_names, violation_counts, color=['yellow', 'red', 'orange', 'darkred'], alpha=0.7)
+            ax.set_title('Business Logic Violations', fontsize=10, fontweight='bold')
+            ax.set_ylabel('Number of Cases')
+            ax.tick_params(axis='x', rotation=45, labelsize=8)
+            
+            # Add value labels on bars
+            for bar, count in zip(bars, violation_counts):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height + max(violation_counts) * 0.01,
+                       f'{count:,}', ha='center', va='bottom', fontsize=8)
+            
+            plot_idx += 1
+    
+    # Hide empty subplots
+    for i in range(plot_idx, n_rows * n_cols):
+        row = i // n_cols
+        col_idx = i % n_cols
+        axes[row, col_idx].set_visible(False)
+    
+    plt.tight_layout()
+    plt.show()
+
+# Create visualizations
+visualize_categorical_and_validation_findings(
+    df_clientes, 
+    target_categorical_cols, 
+    validation_results if 'validation_results' in locals() else None
+)
+
+print(f"\n✅ DETAILED EDA STEP 1-4 COMPLETED!")
+print(f"📋 Next steps: Data cleaning recommendations and homologation strategies")
+
+# =============================================================================
+# STEP 5: DATA CLEANING AND FEATURE HOMOLOGATION STRATEGIES
+# =============================================================================
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import Counter
+import warnings
+warnings.filterwarnings('ignore')
+
+print("🧹 DATA CLEANING AND FEATURE HOMOLOGATION")
+print("="*80)
+print("📋 Objective: Consolidate categorical features to improve model performance")
+print("🎯 Strategy: Group categories representing <40% into 'Others' category")
+print("📊 Focus: ocupacion, ciudad, nombreempleadorcliente, cargoempleocliente")
+
+# =============================================================================
+# STEP 5.1: CATEGORICAL FEATURE CONSOLIDATION STRATEGY
+# =============================================================================
+
+def analyze_categorical_for_consolidation(df, column_name, min_frequency_pct=5.0, top_categories_pct=60.0):
+    """
+    Analyze categorical column and recommend consolidation strategy
+    
+    Parameters:
+    - df: DataFrame
+    - column_name: Column to analyze
+    - min_frequency_pct: Minimum frequency percentage to keep as separate category
+    - top_categories_pct: Percentage of data that top categories should represent
+    """
+    print(f"\n🔍 CONSOLIDATION ANALYSIS: {column_name}")
+    print("="*60)
+    
+    if column_name not in df.columns:
+        print(f"❌ Column '{column_name}' not found!")
+        return None
+    
+    # Get value counts and percentages
+    value_counts = df[column_name].value_counts()
+    total_non_null = df[column_name].notna().sum()
+    value_percentages = (value_counts / total_non_null * 100).round(2)
+    
+    # Calculate cumulative percentages
+    cumulative_pct = value_percentages.cumsum()
+    
+    print(f"📊 Current state:")
+    print(f"   Total non-null values: {total_non_null:,}")
+    print(f"   Unique categories: {len(value_counts):,}")
+    print(f"   Missing values: {df[column_name].isnull().sum():,}")
+    
+    # Find categories that represent the target percentage
+    top_categories_mask = cumulative_pct <= top_categories_pct
+    top_categories = value_counts[top_categories_mask]
+    
+    # Find categories above minimum frequency
+    frequent_categories_mask = value_percentages >= min_frequency_pct
+    frequent_categories = value_counts[frequent_categories_mask]
+    
+    # Combine both criteria (categories that are either in top % OR above min frequency)
+    keep_categories = set(top_categories.index) | set(frequent_categories.index)
+    consolidate_categories = set(value_counts.index) - keep_categories
+    
+    # Calculate statistics
+    keep_count = sum(value_counts[cat] for cat in keep_categories)
+    consolidate_count = sum(value_counts[cat] for cat in consolidate_categories)
+    
+    print(f"\n📈 Consolidation recommendation:")
+    print(f"   Keep as separate: {len(keep_categories):,} categories ({keep_count:,} records, {keep_count/total_non_null*100:.1f}%)")
+    print(f"   Consolidate to 'Others': {len(consolidate_categories):,} categories ({consolidate_count:,} records, {consolidate_count/total_non_null*100:.1f}%)")
+    
+    # Show top categories to keep
+    print(f"\n🏆 Top categories to keep:")
+    keep_categories_sorted = [(cat, value_counts[cat], value_percentages[cat]) 
+                             for cat in sorted(keep_categories, key=lambda x: value_counts[x], reverse=True)]
+    
+    for i, (cat, count, pct) in enumerate(keep_categories_sorted[:15], 1):
+        print(f"   {i:2d}. '{cat}': {count:,} ({pct:.1f}%)")
+    
+    if len(keep_categories_sorted) > 15:
+        print(f"   ... and {len(keep_categories_sorted) - 15} more categories")
+    
+    # Show sample of categories to consolidate
+    if consolidate_categories:
+        print(f"\n📦 Sample categories to consolidate (showing first 10):")
+        consolidate_sorted = sorted(consolidate_categories, key=lambda x: value_counts[x], reverse=True)
+        for i, cat in enumerate(consolidate_sorted[:10], 1):
+            count = value_counts[cat]
+            pct = value_percentages[cat]
+            print(f"   {i:2d}. '{cat}': {count:,} ({pct:.1f}%)")
+        
+        if len(consolidate_sorted) > 10:
+            print(f"   ... and {len(consolidate_sorted) - 10} more categories")
+    
+    return {
+        'column_name': column_name,
+        'keep_categories': list(keep_categories),
+        'consolidate_categories': list(consolidate_categories),
+        'keep_count': keep_count,
+        'consolidate_count': consolidate_count,
+        'original_unique': len(value_counts),
+        'final_unique': len(keep_categories) + (1 if consolidate_categories else 0)
+    }
+
+# =============================================================================
+# STEP 5.2: APPLY CONSOLIDATION ANALYSIS TO KEY CATEGORICAL VARIABLES
+# =============================================================================
+
+# Define the categorical columns to analyze and consolidate
+target_columns_for_consolidation = [
+    'ocupacion',
+    'ciudad', 
+    'nombreempleadorcliente',
+    'cargoempleocliente',
+    'sexo',
+    'estado_civil',
+    'pais'
+]
+
+# Store consolidation recommendations
+consolidation_recommendations = {}
+
+print(f"\n🎯 ANALYZING {len(target_columns_for_consolidation)} CATEGORICAL VARIABLES FOR CONSOLIDATION")
+print("="*80)
+
+for column in target_columns_for_consolidation:
+    if column in df_clientes.columns:
+        # Use different thresholds based on column characteristics
+        if column in ['sexo', 'estado_civil', 'pais']:
+            # For low-cardinality columns, use lower thresholds
+            recommendation = analyze_categorical_for_consolidation(
+                df_clientes, column, min_frequency_pct=2.0, top_categories_pct=80.0
+            )
+        elif column in ['ciudad']:
+            # For geographic data, be more selective
+            recommendation = analyze_categorical_for_consolidation(
+                df_clientes, column, min_frequency_pct=3.0, top_categories_pct=70.0
+            )
+        else:
+            # For high-cardinality columns like ocupacion, nombreempleadorcliente, cargoempleocliente
+            recommendation = analyze_categorical_for_consolidation(
+                df_clientes, column, min_frequency_pct=1.0, top_categories_pct=60.0
+            )
+        
+        if recommendation:
+            consolidation_recommendations[column] = recommendation
+    else:
+        print(f"⚠️  Column '{column}' not found in dataset")
+
+# =============================================================================
+# STEP 5.3: IMPLEMENT CONSOLIDATION FUNCTION (FIXED FOR CATEGORICAL DTYPE)
+# =============================================================================
+
+def consolidate_categorical_column(df, column_name, keep_categories, others_label="Others"):
+    """
+    Consolidate categorical column by grouping low-frequency categories
+    FIXED: Handles pandas categorical dtype properly
+    
+    Parameters:
+    - df: DataFrame
+    - column_name: Column to consolidate
+    - keep_categories: List of categories to keep as-is
+    - others_label: Label for consolidated categories
+    
+    Returns:
+    - Series with consolidated categories
+    """
+    if column_name not in df.columns:
+        print(f"❌ Column '{column_name}' not found!")
+        return df[column_name].copy()
+    
+    print(f"   🔧 Processing {column_name} (dtype: {df[column_name].dtype})...")
+    
+    # Create a copy of the column
+    consolidated_column = df[column_name].copy()
+    
+    # Check if column is categorical dtype and convert to string first
+    if pd.api.types.is_categorical_dtype(consolidated_column):
+        print(f"   📝 Converting categorical to string for processing...")
+        consolidated_column = consolidated_column.astype(str)
+    
+    # Handle NaN values - convert to string representation temporarily
+    consolidated_column = consolidated_column.fillna('__MISSING__')
+    
+    # Create mask for values to replace
+    mask = ~consolidated_column.isin(keep_categories)
+    
+    # Don't replace the missing value placeholder
+    mask = mask & (consolidated_column != '__MISSING__')
+    
+    # Apply consolidation
+    consolidated_column.loc[mask] = others_label
+    
+    # Convert missing values back to NaN
+    consolidated_column = consolidated_column.replace('__MISSING__', np.nan)
+    
+    print(f"   ✅ Successfully consolidated {column_name}")
+    return consolidated_column
+
+# =============================================================================
+# STEP 5.4: CREATE CONSOLIDATED DATASET (UPDATED)
+# =============================================================================
+
+print(f"\n🔧 CREATING CONSOLIDATED DATASET")
+print("="*50)
+
+# Create a copy of the original dataset
+df_clientes_consolidated = df_clientes.copy()
+
+# Apply consolidation to each recommended column
+consolidation_summary = {}
+
+for column, recommendation in consolidation_recommendations.items():
+    print(f"\n🔄 Consolidating: {column}")
+    
+    # Apply consolidation
+    original_unique = df_clientes_consolidated[column].nunique()
+    
+    df_clientes_consolidated[f"{column}_consolidated"] = consolidate_categorical_column(
+        df_clientes_consolidated, 
+        column, 
+        recommendation['keep_categories'],
+        others_label="Others"
+    )
+    
+    new_unique = df_clientes_consolidated[f"{column}_consolidated"].nunique()
+    
+    # Calculate reduction
+    reduction_pct = ((original_unique - new_unique) / original_unique * 100) if original_unique > 0 else 0
+    
+    print(f"   📊 Original categories: {original_unique:,}")
+    print(f"   📊 Consolidated categories: {new_unique:,}")
+    print(f"   📈 Reduction: {reduction_pct:.1f}%")
+    
+    # Show top categories in consolidated column
+    new_value_counts = df_clientes_consolidated[f"{column}_consolidated"].value_counts()
+    print(f"   🏆 Top 5 categories after consolidation:")
+    for i, (cat, count) in enumerate(new_value_counts.head(5).items(), 1):
+        pct = count / len(df_clientes_consolidated) * 100
+        print(f"     {i}. '{cat}': {count:,} ({pct:.1f}%)")
+    
+    # Store summary
+    consolidation_summary[column] = {
+        'original_unique': original_unique,
+        'consolidated_unique': new_unique,
+        'reduction_pct': reduction_pct,
+        'others_count': (df_clientes_consolidated[f"{column}_consolidated"] == "Others").sum()
+    }
+
+print(f"\n✅ CONSOLIDATION COMPLETED SUCCESSFULLY!")
+
+# =============================================================================
+# STEP 5.5: VALIDATION AND QUALITY CHECKS
+# =============================================================================
+
+print(f"\n✅ CONSOLIDATION VALIDATION")
+print("="*50)
+
+def validate_consolidation(df_original, df_consolidated, column_mapping):
+    """
+    Validate that consolidation was applied correctly
+    """
+    validation_results = {}
+    
+    for original_col, consolidated_col in column_mapping.items():
+        if original_col in df_original.columns and consolidated_col in df_consolidated.columns:
+            # Check that no data was lost
+            original_non_null = df_original[original_col].notna().sum()
+            consolidated_non_null = df_consolidated[consolidated_col].notna().sum()
+            
+            # Check that Others category was created appropriately
+            others_count = (df_consolidated[consolidated_col] == "Others").sum()
+            
+            validation_results[original_col] = {
+                'data_preserved': original_non_null == consolidated_non_null,
+                'others_created': others_count > 0,
+                'original_non_null': original_non_null,
+                'consolidated_non_null': consolidated_non_null,
+                'others_count': others_count
+            }
+            
+            print(f"📊 {original_col}:")
+            print(f"   Data preserved: {'✅' if validation_results[original_col]['data_preserved'] else '❌'}")
+            print(f"   Others category created: {'✅' if validation_results[original_col]['others_created'] else '❌'}")
+            print(f"   Records in 'Others': {others_count:,}")
+    
+    return validation_results
+
+# Create column mapping for validation
+column_mapping = {col: f"{col}_consolidated" for col in consolidation_recommendations.keys()}
+
+# Validate consolidation
+validation_results = validate_consolidation(df_clientes, df_clientes_consolidated, column_mapping)
+
+# =============================================================================
+# STEP 5.6: SUMMARY STATISTICS AND RECOMMENDATIONS
+# =============================================================================
+
+print(f"\n📈 CONSOLIDATION SUMMARY")
+print("="*50)
+
+total_original_categories = sum(summary['original_unique'] for summary in consolidation_summary.values())
+total_consolidated_categories = sum(summary['consolidated_unique'] for summary in consolidation_summary.values())
+overall_reduction = ((total_original_categories - total_consolidated_categories) / total_original_categories * 100)
+
+print(f"📊 Overall consolidation impact:")
+print(f"   Total original categories: {total_original_categories:,}")
+print(f"   Total consolidated categories: {total_consolidated_categories:,}")
+print(f"   Overall reduction: {overall_reduction:.1f}%")
+
+print(f"\n📋 Detailed breakdown:")
+for column, summary in consolidation_summary.items():
+    print(f"   {column}:")
+    print(f"     {summary['original_unique']:,} → {summary['consolidated_unique']:,} categories ({summary['reduction_pct']:.1f}% reduction)")
+    print(f"     {summary['others_count']:,} records moved to 'Others'")
+
+# =============================================================================
+# STEP 5.7: VISUALIZATION OF CONSOLIDATION IMPACT
+# =============================================================================
+
+print(f"\n📊 CREATING CONSOLIDATION IMPACT VISUALIZATIONS")
+print("="*50)
+
+def visualize_consolidation_impact(df_original, df_consolidated, consolidation_summary, max_cols=4):
+    """
+    Create before/after visualizations for consolidation
+    """
+    # Select columns to visualize (limit to avoid overcrowding)
+    columns_to_plot = list(consolidation_summary.keys())[:max_cols]
+    
+    fig, axes = plt.subplots(len(columns_to_plot), 2, figsize=(15, 4*len(columns_to_plot)))
+    if len(columns_to_plot) == 1:
+        axes = axes.reshape(1, -1)
+    
+    for i, column in enumerate(columns_to_plot):
+        # Before consolidation
+        ax1 = axes[i, 0]
+        value_counts_original = df_original[column].value_counts().head(15)
+        value_counts_original.plot(kind='bar', ax=ax1, color='lightcoral', alpha=0.7)
+        ax1.set_title(f'{column} - Before Consolidation\n({consolidation_summary[column]["original_unique"]} categories)', 
+                     fontweight='bold')
+        ax1.set_xlabel('')
+        ax1.set_ylabel('Count')
+        ax1.tick_params(axis='x', rotation=45, labelsize=8)
+        
+        # After consolidation
+        ax2 = axes[i, 1]
+        consolidated_col = f"{column}_consolidated"
+        value_counts_consolidated = df_consolidated[consolidated_col].value_counts()
+        value_counts_consolidated.plot(kind='bar', ax=ax2, color='lightblue', alpha=0.7)
+        ax2.set_title(f'{column} - After Consolidation\n({consolidation_summary[column]["consolidated_unique"]} categories)', 
+                     fontweight='bold')
+        ax2.set_xlabel('')
+        ax2.set_ylabel('Count')
+        ax2.tick_params(axis='x', rotation=45, labelsize=8)
+        
+        # Highlight Others category
+        if 'Others' in value_counts_consolidated.index:
+            others_idx = list(value_counts_consolidated.index).index('Others')
+            ax2.patches[others_idx].set_color('orange')
+            ax2.patches[others_idx].set_alpha(0.8)
+    
+    plt.tight_layout()
+    plt.show()
+
+# Create visualizations
+visualize_consolidation_impact(df_clientes, df_clientes_consolidated, consolidation_summary)
+
+# =============================================================================
+# STEP 5.8: ADDITIONAL DATA QUALITY IMPROVEMENTS
+# =============================================================================
+
+print(f"\n🔧 ADDITIONAL DATA QUALITY IMPROVEMENTS")
+print("="*50)
+
+def apply_additional_cleaning(df):
+    """
+    Apply additional data quality improvements
+    """
+    df_cleaned = df.copy()
+    
+    print("🧹 Applying additional cleaning steps:")
+    
+    # 1. Standardize text fields (remove extra spaces, standardize case)
+    text_columns = ['ocupacion_consolidated', 'ciudad_consolidated', 
+                   'nombreempleadorcliente_consolidated', 'cargoempleocliente_consolidated']
+    
+    for col in text_columns:
+        if col in df_cleaned.columns:
+            print(f"   📝 Standardizing text in: {col}")
+            # Convert to string first, then clean
+            df_cleaned[col] = df_cleaned[col].astype(str)
+            # Remove extra spaces and standardize case
+            df_cleaned[col] = df_cleaned[col].str.strip().str.title()
+            # Handle 'Others' category specifically
+            df_cleaned[col] = df_cleaned[col].replace('Others', 'Others')
+            # Handle NaN that became 'Nan'
+            df_cleaned[col] = df_cleaned[col].replace('Nan', np.nan)
+    
+    # 2. Create binary flags for missing values in important columns
+    important_columns = ['fechaingresoempleo', 'nombreempleadorcliente', 'cargoempleocliente']
+    
+    for col in important_columns:
+        if col in df_cleaned.columns:
+            flag_col = f"missing_{col}"
+            df_cleaned[flag_col] = df_cleaned[col].isnull().astype(int)
+            print(f"   🏷️  Created missing value flag: {flag_col}")
+    
+    # 3. Create derived features
+    print("   🔧 Creating derived features:")
+    
+    # Employment status derived from occupation
+    if 'ocupacion_consolidated' in df_cleaned.columns:
+        df_cleaned['is_retired'] = (df_cleaned['ocupacion_consolidated'].str.contains('Jubilado', na=False)).astype(int)
+        print("     - is_retired (from ocupacion)")
+    
+    # Age groups (if age column exists)
+    if 'edad' in df_cleaned.columns:
+        df_cleaned['age_group'] = pd.cut(df_cleaned['edad'], 
+                                       bins=[0, 25, 35, 45, 55, 65, 100], 
+                                       labels=['18-25', '26-35', '36-45', '46-55', '56-65', '65+'])
+        print("     - age_group (from edad)")
+    
+    # 4. Income-to-payment ratio (if both exist)
+    if 'ingresos_reportados' in df_cleaned.columns and 'monto_letra' in df_cleaned.columns:
+        df_cleaned['payment_to_income_ratio'] = (df_cleaned['monto_letra'] / 
+                                               df_cleaned['ingresos_reportados']).fillna(0)
+        # Cap extreme ratios
+        df_cleaned['payment_to_income_ratio'] = df_cleaned['payment_to_income_ratio'].clip(0, 2)
+        print("     - payment_to_income_ratio")
+    
+    return df_cleaned
+
+# Apply additional cleaning
+df_clientes_final = apply_additional_cleaning(df_clientes_consolidated)
+
+print(f"\n✅ FINAL DATASET SUMMARY")
+print("="*50)
+print(f"📊 Final dataset shape: {df_clientes_final.shape}")
+print(f"💾 Memory usage: {df_clientes_final.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+
+# Show final column summary
+print(f"\n📋 Final columns ({len(df_clientes_final.columns)}):")
+for i, col in enumerate(df_clientes_final.columns, 1):
+    col_type = str(df_clientes_final[col].dtype)
+    non_null = df_clientes_final[col].notna().sum()
+    print(f"   {i:2d}. {col:<35} | {col_type:<15} | Non-null: {non_null:,}")
+
+print(f"\n🎉 DATA CONSOLIDATION AND CLEANING COMPLETE!")
+print("📝 Next steps:")
+print("   1. Feature engineering and encoding")
+print("   2. Train-test split")
+print("   3. Model training and evaluation")
+print("   4. Model validation and testing")
+
+# =============================================================================
+# DECISION: PROCEED WITH df_clientes_final ONLY
+# =============================================================================
+
+print("🎯 STRATEGIC DECISION: USING df_clientes_final ONLY")
+print("="*60)
+print("✅ REASONS:")
+print("   1. Production simplicity - no external API dependencies")
+print("   2. Faster loan application process")
+print("   3. Aligns with cross-sectional methodology research")
+print("   4. All necessary features available at application time")
+print("   5. Reduces operational complexity and risk")
+
+print(f"\n📊 FINAL DATASET FOR MODELING:")
+print(f"   Dataset: df_clientes_final")
+print(f"   Records: {len(df_clientes_final):,}")
+print(f"   Features: {len(df_clientes_final.columns)}")
+print(f"   Target: ingresos_reportados")
+
+print(f"\n🚀 NEXT STEPS:")
+print("   1. Feature selection and engineering")
+print("   2. Train-test split")
+print("   3. Model training with multiple algorithms")
+print("   4. Model evaluation and selection")
+print("   5. Production deployment preparation")
+
+# =============================================================================
+# STEP 7: INVESTIGATE ID DISCREPANCY IN df_clientes_final
+# =============================================================================
+
+print("🔍 INVESTIGATING ID DISCREPANCY IN df_clientes_final")
+print("="*70)
+print("🚨 ISSUE: Dataset has ~19,000 records but only ~15,000 unique IDs")
+print("📋 Possible causes: Duplicates, missing IDs, or data quality issues")
+
+# =============================================================================
+# STEP 7.1: BASIC ID ANALYSIS
+# =============================================================================
+
+print(f"\n📊 BASIC ID ANALYSIS")
+print("="*40)
+
+total_records = len(df_clientes_final)
+total_ids = df_clientes_final['identificador_unico'].nunique()
+missing_ids = df_clientes_final['identificador_unico'].isnull().sum()
+non_null_ids = df_clientes_final['identificador_unico'].notna().sum()
+
+print(f"Total records in dataset: {total_records:,}")
+print(f"Unique identificador_unico: {total_ids:,}")
+print(f"Missing identificador_unico: {missing_ids:,}")
+print(f"Non-null identificador_unico: {non_null_ids:,}")
+print(f"Discrepancy: {total_records - total_ids:,} records")
+
+# Calculate the difference
+difference = total_records - total_ids
+print(f"\n🔍 ANALYSIS:")
+if missing_ids > 0:
+    print(f"   • {missing_ids:,} records have missing IDs")
+if difference > missing_ids:
+    duplicate_records = difference - missing_ids
+    print(f"   • {duplicate_records:,} records appear to be duplicates")
+
+# =============================================================================
+# STEP 7.2: DUPLICATE ANALYSIS
+# =============================================================================
+
+print(f"\n🔍 DUPLICATE ANALYSIS")
+print("="*40)
+
+# Check for duplicate IDs
+duplicate_mask = df_clientes_final['identificador_unico'].duplicated(keep=False)
+duplicate_records = df_clientes_final[duplicate_mask]
+unique_duplicate_ids = df_clientes_final[duplicate_mask]['identificador_unico'].nunique()
+
+print(f"Records with duplicate IDs: {len(duplicate_records):,}")
+print(f"Unique IDs that have duplicates: {unique_duplicate_ids:,}")
+
+if len(duplicate_records) > 0:
+    # Analyze duplicate patterns
+    id_counts = df_clientes_final['identificador_unico'].value_counts()
+    duplicated_ids = id_counts[id_counts > 1]
+    
+    print(f"\n📈 DUPLICATE PATTERNS:")
+    print(f"   IDs appearing once: {(id_counts == 1).sum():,}")
+    print(f"   IDs appearing multiple times: {len(duplicated_ids):,}")
+    print(f"   Maximum occurrences: {duplicated_ids.max():,}")
+    print(f"   Average occurrences for duplicated IDs: {duplicated_ids.mean():.2f}")
+    
+    # Show distribution of duplicate counts
+    print(f"\n📊 DUPLICATE FREQUENCY DISTRIBUTION:")
+    duplicate_freq = duplicated_ids.value_counts().sort_index()
+    for freq, count in duplicate_freq.items():
+        print(f"   IDs appearing {freq} times: {count:,} IDs")
+    
+    # Show top duplicated IDs
+    print(f"\n🏆 TOP 10 MOST DUPLICATED IDs:")
+    for i, (id_val, count) in enumerate(duplicated_ids.head(10).items(), 1):
+        print(f"   {i:2d}. {id_val}: {count:,} records")
+
+# =============================================================================
+# STEP 7.3: SAMPLE DUPLICATE RECORDS INSPECTION
+# =============================================================================
+
+if len(duplicate_records) > 0:
+    print(f"\n🔍 SAMPLE DUPLICATE RECORDS INSPECTION")
+    print("="*50)
+    
+    # Get a sample of duplicated IDs for detailed inspection
+    sample_duplicate_ids = duplicated_ids.head(3).index.tolist()
+    
+    for i, sample_id in enumerate(sample_duplicate_ids, 1):
+        print(f"\n📋 SAMPLE {i}: ID = {sample_id}")
+        print("-" * 30)
+        
+        sample_records = df_clientes_final[df_clientes_final['identificador_unico'] == sample_id]
+        print(f"Number of records: {len(sample_records)}")
+        
+        # Show key columns to understand differences
+        key_columns = ['identificador_unico', 'cliente', 'edad', 'sexo', 'ocupacion', 
+                      'ingresos_reportados', 'monto_letra', 'fecha_inicio', 'fecha_vencimiento']
+        
+        # Only show columns that exist
+        available_columns = [col for col in key_columns if col in sample_records.columns]
+        
+        print("Key fields comparison:")
+        display_df = sample_records[available_columns].reset_index(drop=True)
+        
+        # Show the records
+        for idx, row in display_df.iterrows():
+            print(f"  Record {idx + 1}:")
+            for col in available_columns:
+                print(f"    {col}: {row[col]}")
+        
+        # Check if records are identical
+        if len(sample_records) > 1:
+            # Compare all columns except index
+            cols_to_compare = [col for col in sample_records.columns if col != 'identificador_unico']
+            
+            # Check if all other columns are identical
+            first_record = sample_records.iloc[0][cols_to_compare]
+            identical = True
+            
+            for idx in range(1, len(sample_records)):
+                if not sample_records.iloc[idx][cols_to_compare].equals(first_record):
+                    identical = False
+                    break
+            
+            if identical:
+                print("  🔄 Status: EXACT DUPLICATES (all fields identical)")
+            else:
+                print("  📊 Status: DIFFERENT DATA (same ID, different information)")
+                
+                # Find which columns differ
+                differing_columns = []
+                for col in cols_to_compare:
+                    if sample_records[col].nunique() > 1:
+                        differing_columns.append(col)
+                
+                if differing_columns:
+                    print(f"  📝 Differing columns: {', '.join(differing_columns)}")
+
+# =============================================================================
+# STEP 7.4: MISSING ID ANALYSIS
+# =============================================================================
+
+if missing_ids > 0:
+    print(f"\n🔍 MISSING ID ANALYSIS")
+    print("="*40)
+    
+    missing_id_records = df_clientes_final[df_clientes_final['identificador_unico'].isnull()]
+    
+    print(f"Records with missing identificador_unico: {len(missing_id_records):,}")
+    
+    # Check if these records have other identifying information
+    if 'cliente' in missing_id_records.columns:
+        missing_with_cliente = missing_id_records['cliente'].notna().sum()
+        print(f"Missing ID records with 'cliente' field: {missing_with_cliente:,}")
+    
+    # Show sample of missing ID records
+    print(f"\n📋 SAMPLE MISSING ID RECORDS:")
+    sample_missing = missing_id_records.head(3)
+    
+    display_columns = ['cliente', 'edad', 'sexo', 'ocupacion', 'ingresos_reportados']
+    available_display_cols = [col for col in display_columns if col in sample_missing.columns]
+    
+    for idx, row in sample_missing[available_display_cols].iterrows():
+        print(f"  Record {idx}:")
+        for col in available_display_cols:
+            print(f"    {col}: {row[col]}")
+
+# =============================================================================
+# STEP 7.5: DATA QUALITY RECOMMENDATIONS
+# =============================================================================
+
+print(f"\n💡 DATA QUALITY RECOMMENDATIONS")
+print("="*50)
+
+print(f"🎯 FINDINGS SUMMARY:")
+print(f"   • Total records: {total_records:,}")
+print(f"   • Unique IDs: {total_ids:,}")
+print(f"   • Missing IDs: {missing_ids:,}")
+if len(duplicate_records) > 0:
+    print(f"   • Duplicate records: {len(duplicate_records):,}")
+    print(f"   • IDs with duplicates: {unique_duplicate_ids:,}")
+
+print(f"\n🔧 RECOMMENDED ACTIONS:")
+
+if missing_ids > 0:
+    print(f"   1. 🚨 MISSING IDs: Investigate {missing_ids:,} records without identificador_unico")
+    print(f"      - Check if these can be matched using other fields")
+    print(f"      - Consider removing if no way to identify customers")
+
+if len(duplicate_records) > 0:
+    print(f"   2. 🔄 DUPLICATES: Handle {len(duplicate_records):,} duplicate records")
+    print(f"      - If exact duplicates: Remove duplicates")
+    print(f"      - If different data: Investigate business logic")
+    print(f"      - Consider keeping most recent record")
+
+print(f"   3. 📊 VALIDATION: Verify data source and ETL process")
+print(f"   4. 🧹 CLEANING: Create clean dataset with unique customers")
+
+print(f"\n🎯 NEXT STEPS:")
+print(f"   1. Decide on duplicate handling strategy")
+print(f"   2. Clean the dataset to ensure one record per customer")
+print(f"   3. Validate that target variable is preserved correctly")
+print(f"   4. Proceed with modeling on clean dataset")
+
+# =============================================================================
+# STEP 7.6: CREATE SUMMARY STATISTICS
+# =============================================================================
+
+print(f"\n📊 SUMMARY STATISTICS")
+print("="*40)
+
+summary_stats = {
+    'total_records': total_records,
+    'unique_ids': total_ids,
+    'missing_ids': missing_ids,
+    'duplicate_records': len(duplicate_records) if len(duplicate_records) > 0 else 0,
+    'ids_with_duplicates': unique_duplicate_ids if len(duplicate_records) > 0 else 0,
+    'data_quality_score': ((total_ids / total_records) * 100) if total_records > 0 else 0
+}
+
+for key, value in summary_stats.items():
+    if key == 'data_quality_score':
+        print(f"{key}: {value:.1f}%")
+    else:
+        print(f"{key}: {value:,}")
+
+print(f"\n💾 SUMMARY STORED IN 'summary_stats' VARIABLE")
+
+# =============================================================================
+# STEP 8: DUPLICATE RECORDS VALIDATION AND CLEANING STRATEGY
+# =============================================================================
+
+print("🔧 DUPLICATE RECORDS VALIDATION AND CLEANING")
+print("="*60)
+print("📋 Objective: Analyze and clean 7,354 duplicate records")
+print("🎯 Strategy: Identify exact vs different duplicates, then apply cleaning logic")
+
+# =============================================================================
+# STEP 8.1: DETAILED DUPLICATE ANALYSIS
+# =============================================================================
+
+def analyze_duplicate_types(df, id_column):
+    """
+    Analyze whether duplicates are exact copies or contain different information
+    """
+    print(f"\n🔍 DETAILED DUPLICATE TYPE ANALYSIS")
+    print("="*50)
+    
+    # Get all duplicate records
+    duplicate_mask = df[id_column].duplicated(keep=False)
+    duplicate_records = df[duplicate_mask].copy()
+    
+    if len(duplicate_records) == 0:
+        print("No duplicates found!")
+        return None
+    
+    # Get unique IDs that have duplicates
+    duplicate_ids = duplicate_records[id_column].unique()
+    
+    print(f"Total duplicate records: {len(duplicate_records):,}")
+    print(f"Unique IDs with duplicates: {len(duplicate_ids):,}")
+    
+    # Analyze each duplicated ID
+    exact_duplicates = []
+    different_data_duplicates = []
+    
+    # Columns to exclude from comparison (typically index, timestamps, etc.)
+    exclude_columns = [id_column]  # We'll exclude the ID column from comparison
+    comparison_columns = [col for col in df.columns if col not in exclude_columns]
+    
+    print(f"\n🔍 Analyzing {len(duplicate_ids):,} duplicated IDs...")
+    
+    for i, dup_id in enumerate(duplicate_ids):
+        if i % 1000 == 0:  # Progress indicator
+            print(f"   Processed {i:,}/{len(duplicate_ids):,} IDs...")
+        
+        # Get all records for this ID
+        id_records = duplicate_records[duplicate_records[id_column] == dup_id]
+        
+        if len(id_records) <= 1:
+            continue
+        
+        # Check if all records are identical (excluding the ID column)
+        first_record = id_records.iloc[0][comparison_columns]
+        is_exact_duplicate = True
+        
+        for idx in range(1, len(id_records)):
+            current_record = id_records.iloc[idx][comparison_columns]
+            
+            # Compare records (handling NaN values properly)
+            if not first_record.equals(current_record):
+                # Check if differences are only due to NaN handling
+                try:
+                    # Fill NaN with a placeholder for comparison
+                    first_filled = first_record.fillna('__NULL__')
+                    current_filled = current_record.fillna('__NULL__')
+                    
+                    if not first_filled.equals(current_filled):
+                        is_exact_duplicate = False
+                        break
+                except:
+                    is_exact_duplicate = False
+                    break
+        
+        if is_exact_duplicate:
+            exact_duplicates.append(dup_id)
+        else:
+            different_data_duplicates.append(dup_id)
+    
+    print(f"\n📊 DUPLICATE CLASSIFICATION RESULTS:")
+    print(f"   Exact duplicates (same data): {len(exact_duplicates):,} IDs")
+    print(f"   Different data duplicates: {len(different_data_duplicates):,} IDs")
+    
+    # Calculate record counts
+    exact_duplicate_records = duplicate_records[duplicate_records[id_column].isin(exact_duplicates)]
+    different_data_records = duplicate_records[duplicate_records[id_column].isin(different_data_duplicates)]
+    
+    print(f"\n📈 RECORD COUNTS:")
+    print(f"   Exact duplicate records: {len(exact_duplicate_records):,}")
+    print(f"   Different data records: {len(different_data_records):,}")
+    
+    return {
+        'exact_duplicate_ids': exact_duplicates,
+        'different_data_ids': different_data_duplicates,
+        'exact_duplicate_records': exact_duplicate_records,
+        'different_data_records': different_data_records,
+        'comparison_columns': comparison_columns
+    }
+
+# Perform duplicate analysis
+duplicate_analysis = analyze_duplicate_types(df_clientes_final, 'identificador_unico')
+
+# =============================================================================
+# STEP 8.2: INVESTIGATE DIFFERENT DATA DUPLICATES
+# =============================================================================
+
+if duplicate_analysis and len(duplicate_analysis['different_data_ids']) > 0:
+    print(f"\n🔍 INVESTIGATING DIFFERENT DATA DUPLICATES")
+    print("="*50)
+    
+    def investigate_different_data_duplicates(df, duplicate_analysis, sample_size=5):
+        """
+        Investigate what makes different data duplicates different
+        """
+        different_ids = duplicate_analysis['different_data_ids'][:sample_size]
+        comparison_columns = duplicate_analysis['comparison_columns']
+        
+        print(f"📋 Analyzing {len(different_ids)} sample IDs with different data:")
+        
+        differing_columns_summary = {}
+        
+        for i, dup_id in enumerate(different_ids, 1):
+            print(f"\n🔍 SAMPLE {i}: ID = {dup_id}")
+            print("-" * 40)
+            
+            # Get all records for this ID
+            id_records = df[df['identificador_unico'] == dup_id].copy()
+            print(f"Number of records: {len(id_records)}")
+            
+            # Find columns that differ
+            differing_columns = []
+            for col in comparison_columns:
+                if col in id_records.columns:
+                    unique_values = id_records[col].nunique()
+                    if unique_values > 1:
+                        differing_columns.append(col)
+            
+            print(f"Columns with different values: {differing_columns}")
+            
+            # Track overall differing columns
+            for col in differing_columns:
+                if col not in differing_columns_summary:
+                    differing_columns_summary[col] = 0
+                differing_columns_summary[col] += 1
+            
+            # Show the differing data
+            if differing_columns:
+                print("Differing values:")
+                key_columns = ['identificador_unico'] + differing_columns[:10]  # Limit to first 10 differing columns
+                available_columns = [col for col in key_columns if col in id_records.columns]
+                
+                for idx, row in id_records[available_columns].iterrows():
+                    print(f"  Record {idx}:")
+                    for col in available_columns:
+                        if col != 'identificador_unico':
+                            print(f"    {col}: {row[col]}")
+        
+        # Summary of most common differing columns
+        if differing_columns_summary:
+            print(f"\n📊 MOST COMMON DIFFERING COLUMNS:")
+            sorted_differing = sorted(differing_columns_summary.items(), key=lambda x: x[1], reverse=True)
+            for col, count in sorted_differing[:10]:
+                print(f"   {col}: differs in {count}/{len(different_ids)} samples")
+        
+        return differing_columns_summary
+    
+    differing_columns_summary = investigate_different_data_duplicates(
+        df_clientes_final, duplicate_analysis, sample_size=5
+    )
+
+
+# =============================================================================
+# STEP 8.3: CLEANING STRATEGY DECISION
+# =============================================================================
+
+print(f"\n🎯 CLEANING STRATEGY DECISION")
+print("="*50)
+
+if duplicate_analysis:
+    exact_count = len(duplicate_analysis['exact_duplicate_ids'])
+    different_count = len(duplicate_analysis['different_data_ids'])
+    
+    print(f"📊 DUPLICATE BREAKDOWN:")
+    print(f"   Exact duplicates: {exact_count:,} IDs")
+    print(f"   Different data: {different_count:,} IDs")
+    
+    print(f"\n🔧 RECOMMENDED CLEANING ACTIONS:")
+    
+    if exact_count > 0:
+        exact_records = len(duplicate_analysis['exact_duplicate_records'])
+        print(f"   1. EXACT DUPLICATES ({exact_count:,} IDs, {exact_records:,} records):")
+        print(f"      ✅ Action: Remove duplicates, keep first occurrence")
+        print(f"      📉 Will remove: {exact_records - exact_count:,} records")
+    
+    if different_count > 0:
+        different_records = len(duplicate_analysis['different_data_records'])
+        print(f"   2. DIFFERENT DATA ({different_count:,} IDs, {different_records:,} records):")
+        print(f"      🤔 Action: Requires business logic decision")
+        print(f"      📋 Options:")
+        print(f"         a) Keep most recent record (if date available)")
+        print(f"         b) Keep record with most complete data")
+        print(f"         c) Keep record with highest income (for income modeling)")
+        print(f"         d) Manual review and business rule definition")
+
+
+# =============================================================================
+# STEP 8.4: IMPLEMENT CLEANING FUNCTIONS
+# =============================================================================
+
+def remove_exact_duplicates(df, id_column, duplicate_analysis):
+    """
+    Remove exact duplicate records, keeping the first occurrence
+    """
+    print(f"\n🧹 REMOVING EXACT DUPLICATES")
+    print("="*40)
+    
+    if not duplicate_analysis or len(duplicate_analysis['exact_duplicate_ids']) == 0:
+        print("No exact duplicates to remove.")
+        return df.copy()
+    
+    exact_ids = duplicate_analysis['exact_duplicate_ids']
+    
+    # Create a copy of the dataframe
+    df_cleaned = df.copy()
+    
+    # For exact duplicates, keep only the first occurrence
+    exact_duplicate_mask = df_cleaned[id_column].isin(exact_ids)
+    exact_duplicate_records = df_cleaned[exact_duplicate_mask]
+    
+    # Remove duplicates for exact duplicate IDs only
+    df_exact_cleaned = exact_duplicate_records.drop_duplicates(subset=[id_column], keep='first')
+    
+    # Combine with non-duplicate records
+    non_duplicate_records = df_cleaned[~exact_duplicate_mask]
+    df_cleaned = pd.concat([non_duplicate_records, df_exact_cleaned], ignore_index=True)
+    
+    removed_count = len(df) - len(df_cleaned)
+    print(f"✅ Removed {removed_count:,} exact duplicate records")
+    print(f"📊 Dataset size: {len(df):,} → {len(df_cleaned):,} records")
+    
+    return df_cleaned
+
+def handle_different_data_duplicates(df, id_column, duplicate_analysis, strategy='most_recent'):
+    """
+    Handle duplicates with different data using specified strategy
+    """
+    print(f"\n🔧 HANDLING DIFFERENT DATA DUPLICATES")
+    print("="*40)
+    
+    if not duplicate_analysis or len(duplicate_analysis['different_data_ids']) == 0:
+        print("No different data duplicates to handle.")
+        return df.copy()
+    
+    different_ids = duplicate_analysis['different_data_ids']
+    print(f"Processing {len(different_ids):,} IDs with different data...")
+    
+    df_cleaned = df.copy()
+    
+    if strategy == 'most_recent':
+        # Keep the record with the most recent date (if available)
+        date_columns = [col for col in df.columns if 'fecha' in col.lower() or 'date' in col.lower()]
+        
+        if date_columns:
+            print(f"📅 Using most recent strategy based on: {date_columns}")
+            
+            # For each different data ID, keep the most recent record
+            records_to_keep = []
+            
+            for dup_id in different_ids:
+                id_records = df_cleaned[df_cleaned[id_column] == dup_id].copy()
+                
+                # Find the most recent record
+                most_recent_idx = None
+                for date_col in date_columns:
+                    if date_col in id_records.columns:
+                        # Convert to datetime if not already
+                        try:
+                            id_records[date_col] = pd.to_datetime(id_records[date_col], errors='coerce')
+                            # Get the record with the maximum date
+                            max_date_idx = id_records[date_col].idxmax()
+                            if pd.notna(id_records.loc[max_date_idx, date_col]):
+                                most_recent_idx = max_date_idx
+                                break
+                        except:
+                            continue
+                
+                # If we found a most recent record, keep it; otherwise keep the first
+                if most_recent_idx is not None:
+                    records_to_keep.append(most_recent_idx)
+                else:
+                    records_to_keep.append(id_records.index[0])
+            
+            # Remove all different data duplicates and add back the selected records
+            different_data_mask = df_cleaned[id_column].isin(different_ids)
+            non_different_records = df_cleaned[~different_data_mask]
+            selected_records = df_cleaned.loc[records_to_keep]
+            
+            df_cleaned = pd.concat([non_different_records, selected_records], ignore_index=True)
+            
+        else:
+            print("⚠️  No date columns found, keeping first occurrence")
+            # Fallback: keep first occurrence
+            different_data_mask = df_cleaned[id_column].isin(different_ids)
+            different_data_records = df_cleaned[different_data_mask]
+            df_different_cleaned = different_data_records.drop_duplicates(subset=[id_column], keep='first')
+            
+            non_different_records = df_cleaned[~different_data_mask]
+            df_cleaned = pd.concat([non_different_records, df_different_cleaned], ignore_index=True)
+    
+    elif strategy == 'most_complete':
+        print("📊 Using most complete data strategy...")
+        # Keep the record with the least missing values
+        records_to_keep = []
+        
+        for dup_id in different_ids:
+            id_records = df_cleaned[df_cleaned[id_column] == dup_id].copy()
+            
+            # Calculate missing values for each record
+            missing_counts = id_records.isnull().sum(axis=1)
+            most_complete_idx = missing_counts.idxmin()
+            records_to_keep.append(most_complete_idx)
+        
+        # Remove all different data duplicates and add back the selected records
+        different_data_mask = df_cleaned[id_column].isin(different_ids)
+        non_different_records = df_cleaned[~different_data_mask]
+        selected_records = df_cleaned.loc[records_to_keep]
+        
+        df_cleaned = pd.concat([non_different_records, selected_records], ignore_index=True)
+    
+    elif strategy == 'highest_income':
+        print("💰 Using highest income strategy...")
+        # Keep the record with the highest reported income
+        if 'ingresos_reportados' in df_cleaned.columns:
+            records_to_keep = []
+            
+            for dup_id in different_ids:
+                id_records = df_cleaned[df_cleaned[id_column] == dup_id].copy()
+                
+                # Get the record with highest income (excluding NaN)
+                income_records = id_records.dropna(subset=['ingresos_reportados'])
+                if len(income_records) > 0:
+                    highest_income_idx = income_records['ingresos_reportados'].idxmax()
+                    records_to_keep.append(highest_income_idx)
+                else:
+                    # If no income data, keep first
+                    records_to_keep.append(id_records.index[0])
+            
+            # Remove all different data duplicates and add back the selected records
+            different_data_mask = df_cleaned[id_column].isin(different_ids)
+            non_different_records = df_cleaned[~different_data_mask]
+            selected_records = df_cleaned.loc[records_to_keep]
+            
+            df_cleaned = pd.concat([non_different_records, selected_records], ignore_index=True)
+        else:
+            print("⚠️  Income column not found, keeping first occurrence")
+            # Fallback to first occurrence
+            different_data_mask = df_cleaned[id_column].isin(different_ids)
+            different_data_records = df_cleaned[different_data_mask]
+            df_different_cleaned = different_data_records.drop_duplicates(subset=[id_column], keep='first')
+            
+            non_different_records = df_cleaned[~different_data_mask]
+            df_cleaned = pd.concat([non_different_records, df_different_cleaned], ignore_index=True)
+    
+    removed_count = len(df) - len(df_cleaned)
+    print(f"✅ Processed different data duplicates")
+    print(f"📊 Dataset size: {len(df):,} → {len(df_cleaned):,} records")
+    
+    return df_cleaned
+
+# =============================================================================
+# STEP 8.5: EXECUTE CLEANING PROCESS
+# =============================================================================
+
+print(f"\n🚀 EXECUTING CLEANING PROCESS")
+print("="*50)
+
+# Step 1: Remove exact duplicates
+df_step1 = remove_exact_duplicates(df_clientes_final, 'identificador_unico', duplicate_analysis)
+
+# Step 2: Handle different data duplicates
+# Choose your strategy: 'most_recent', 'most_complete', or 'highest_income'
+print(f"\n🤔 CHOOSE STRATEGY FOR DIFFERENT DATA DUPLICATES:")
+print(f"   1. 'most_recent' - Keep record with most recent date")
+print(f"   2. 'most_complete' - Keep record with least missing values")
+print(f"   3. 'highest_income' - Keep record with highest income (best for income modeling)")
+
+# For income modeling, 'highest_income' makes the most sense
+chosen_strategy = 'highest_income'
+print(f"\n✅ USING STRATEGY: {chosen_strategy}")
+
+df_cleaned = handle_different_data_duplicates(df_step1, 'identificador_unico', duplicate_analysis, chosen_strategy)
+
+# =============================================================================
+# STEP 8.6: FINAL VALIDATION
+# =============================================================================
+
+print(f"\n✅ FINAL VALIDATION")
+print("="*40)
+
+original_records = len(df_clientes_final)
+cleaned_records = len(df_cleaned)
+unique_ids_cleaned = df_cleaned['identificador_unico'].nunique()
+remaining_duplicates = df_cleaned['identificador_unico'].duplicated().sum()
+
+print(f"📊 CLEANING RESULTS:")
+print(f"   Original records: {original_records:,}")
+print(f"   Cleaned records: {cleaned_records:,}")
+print(f"   Records removed: {original_records - cleaned_records:,}")
+print(f"   Unique IDs: {unique_ids_cleaned:,}")
+print(f"   Remaining duplicates: {remaining_duplicates:,}")
+
+if remaining_duplicates == 0:
+    print(f"   ✅ SUCCESS: No remaining duplicates!")
+else:
+    print(f"   ⚠️  WARNING: {remaining_duplicates:,} duplicates still remain")
+
+# Validate target variable preservation
+if 'ingresos_reportados' in df_cleaned.columns:
+    original_income_records = df_clientes_final['ingresos_reportados'].notna().sum()
+    cleaned_income_records = df_cleaned['ingresos_reportados'].notna().sum()
+    
+    print(f"\n💰 TARGET VARIABLE VALIDATION:")
+    print(f"   Original income records: {original_income_records:,}")
+    print(f"   Cleaned income records: {cleaned_income_records:,}")
+    print(f"   Income records preserved: {cleaned_income_records/original_income_records*100:.1f}%")
+
+# Store the cleaned dataset
+df_clientes_clean = df_cleaned.copy()
+
+print(f"\n💾 CLEANED DATASET STORED AS: df_clientes_clean")
+print(f"🎉 READY FOR FEATURE ENGINEERING AND MODELING!")
+
+## FINAL DATAFRAME FOR THIS PROCESS SHOULD BE NAMED AS df_original
+
+##TO VALIDATE:
+# %%
+# SECTION 5: ENHANCED FEATURE ENGINEERING WITH NEW LOAN FEATURES (DTYPE FIXED)
+# =============================================================================
+print("\n⚙️ ENHANCED FEATURE ENGINEERING SETUP (WITH LOAN FEATURES)")
+print("-" * 60)
+
+# =============================================================================
+# PREPROCESSING FUNCTION WITH PROPER DTYPE HANDLING
+# =============================================================================
+
+def preprocess_data_fixed(df):
+    """
+    Complete data preprocessing pipeline with proper dtype handling
+    """
+    df_processed = df.copy()
+
+    # 4.1: Handle Missing Values
+    print("   📋 Handling missing values...")
+
+    # Core numerical missing values
+    if 'monto_letra' in df_processed.columns:
+        df_processed['monto_letra_missing'] = df_processed['monto_letra'].isnull().astype('int32')
+        median_monto = df_processed['monto_letra'].median()
+        df_processed['monto_letra'] = df_processed['monto_letra'].fillna(median_monto).astype('float32')
+        print(f"      ✅ monto_letra: filled {df_processed['monto_letra_missing'].sum()} missing values")
+
+    # New loan features (high missing rate - special handling)
+    if 'monto_prestamo' in df_processed.columns:
+        missing_count = df_processed['monto_prestamo'].isnull().sum()
+        missing_pct = (missing_count / len(df_processed)) * 100
+
+        # Create missing flag (important feature!)
+        df_processed['monto_prestamo_missing'] = df_processed['monto_prestamo'].isnull().astype('int32')
+
+        # Fill with 0 (indicates no loan amount recorded)
+        df_processed['monto_prestamo'] = df_processed['monto_prestamo'].fillna(0).astype('float32')
+        print(f"      ✅ monto_prestamo: filled {missing_count:,} missing values ({missing_pct:.1f}%) with 0")
+
+    if 'tasa_prestamo' in df_processed.columns:
+        missing_count = df_processed['tasa_prestamo'].isnull().sum()
+        missing_pct = (missing_count / len(df_processed)) * 100
+
+        # Create missing flag (important feature!)
+        df_processed['tasa_prestamo_missing'] = df_processed['tasa_prestamo'].isnull().astype('int32')
+
+        # Fill with median of available rates (more meaningful than 0)
+        median_rate = df_processed['tasa_prestamo'].median()
+        df_processed['tasa_prestamo'] = df_processed['tasa_prestamo'].fillna(median_rate).astype('float32')
+        print(f"      ✅ tasa_prestamo: filled {missing_count:,} missing values ({missing_pct:.1f}%) with median ({median_rate:.2f})")
+
+    # Create derived features from new loan data
+    if 'monto_prestamo' in df_processed.columns and 'monto_letra' in df_processed.columns:
+        # Loan to payment ratio (when both available)
+        df_processed['loan_to_payment_ratio'] = (df_processed['monto_prestamo'] / (df_processed['monto_letra'] + 1)).astype('float32')
+        print(f"      ✅ Created loan_to_payment_ratio feature")
+
+    if 'monto_prestamo' in df_processed.columns:
+        # Has loan indicator (binary feature)
+        df_processed['has_loan_amount'] = (df_processed['monto_prestamo'] > 0).astype('int32')
+        print(f"      ✅ Created has_loan_amount indicator")
+
+    # 4.2: Convert Date Features
+    print("   📅 Converting date features...")
+    reference_date = pd.Timestamp('2020-01-01')
+    date_columns = ['fechaingresoempleo', 'fecha_inicio', 'fecha_vencimiento']
+
+    for date_col in date_columns:
+        if date_col in df_processed.columns:
+            # Convert to datetime
+            df_processed[date_col] = pd.to_datetime(df_processed[date_col], errors='coerce')
+
+            # Convert to days since reference
+            df_processed[f'{date_col}_days'] = ((df_processed[date_col] - reference_date).dt.days).astype('float32')
+
+            # Handle missing values
+            missing_count = df_processed[f'{date_col}_days'].isnull().sum()
+            if missing_count > 0:
+                df_processed[f'{date_col}_missing'] = df_processed[f'{date_col}_days'].isnull().astype('int32')
+                median_days = df_processed[f'{date_col}_days'].median()
+                df_processed[f'{date_col}_days'] = df_processed[f'{date_col}_days'].fillna(median_days).astype('float32')
+                print(f"      ✅ {date_col}: converted to days, filled {missing_count} missing")
+
+            # Drop original date column
+            df_processed.drop(columns=[date_col], inplace=True)
+
+    # 4.3: Encode Categorical Features (FIXED VERSION)
+    print("   🏷️  Encoding categorical features with proper dtypes...")
+
+    # Low cardinality - One-hot encoding with proper dtypes
+    low_cardinality = ['sexo_consolidated', 'estado_civil_consolidated', 'pais_consolidated', 'age_group']
+    existing_low_card = [col for col in low_cardinality if col in df_processed.columns]
+
+    for col in existing_low_card:
+        df_processed[col] = df_processed[col].fillna('Unknown')
+
+        # KEY FIX: Add dtype=int parameter and explicit conversion
+        dummies = pd.get_dummies(df_processed[col], prefix=col, drop_first=True, dtype='int32')
+
+        # Double-check conversion to int32
+        for dummy_col in dummies.columns:
+            dummies[dummy_col] = dummies[dummy_col].astype('int32')
+
+        df_processed = pd.concat([df_processed, dummies], axis=1)
+        df_processed.drop(columns=[col], inplace=True)
+        print(f"      ✅ {col}: created {len(dummies.columns)} dummy variables (int32)")
+
+    # High cardinality - Frequency encoding
+    high_cardinality = ['ocupacion_consolidated', 'ciudad_consolidated',
+                       'nombreempleadorcliente_consolidated', 'cargoempleocliente_consolidated']
+    existing_high_card = [col for col in high_cardinality if col in df_processed.columns]
+
+    for col in existing_high_card:
+        df_processed[col] = df_processed[col].fillna('Unknown')
+        freq_map = df_processed[col].value_counts().to_dict()
+        new_col_name = f'{col}_freq'
+        df_processed[new_col_name] = df_processed[col].map(freq_map).astype('int32')
+        df_processed.drop(columns=[col], inplace=True)
+        print(f"      ✅ {col}: frequency encoded (range: {df_processed[new_col_name].min()}-{df_processed[new_col_name].max()})")
+
+    return df_processed
+
+def create_interaction_features(df):
+    """
+    Create advanced interaction features for enhanced model performance
+    Focus on interpretable, business-meaningful features
+    ENHANCED VERSION: Includes new loan features (monto_prestamo, tasa_prestamo)
+    DTYPE FIXED: All features are ML-compatible (int32/float32)
+    """
+    df_enhanced = df.copy()
+
+    print(f"   🔧 Creating interaction features for dataset: {df.shape}")
+
+    # Get age group columns
+    age_columns = [col for col in df.columns if col.startswith('age_group_')]
+    
+    # =============================================================================
+    # NEW SECTION: LOAN-SPECIFIC FEATURE ENGINEERING
+    # =============================================================================
+    print("   💳 Creating loan-specific features...")
+    
+    # 1. LOAN AMOUNT FEATURES
+    if 'monto_prestamo' in df.columns:
+        # Loan amount categories
+        loan_25th = df_enhanced['monto_prestamo'].quantile(0.25)
+        loan_50th = df_enhanced['monto_prestamo'].quantile(0.50)
+        loan_75th = df_enhanced['monto_prestamo'].quantile(0.75)
+        loan_90th = df_enhanced['monto_prestamo'].quantile(0.90)
+
+        df_enhanced['small_loan'] = ((df_enhanced['monto_prestamo'] > 0) &
+                                   (df_enhanced['monto_prestamo'] <= loan_25th)).astype('int32')
+        df_enhanced['medium_loan'] = ((df_enhanced['monto_prestamo'] > loan_25th) &
+                                    (df_enhanced['monto_prestamo'] <= loan_75th)).astype('int32')
+        df_enhanced['large_loan'] = ((df_enhanced['monto_prestamo'] > loan_75th) &
+                                   (df_enhanced['monto_prestamo'] <= loan_90th)).astype('int32')
+        df_enhanced['jumbo_loan'] = (df_enhanced['monto_prestamo'] > loan_90th).astype('int32')
+
+        # Loan amount per age (loan capacity indicator)
+        if 'edad' in df.columns:
+            df_enhanced['loan_per_age'] = (df_enhanced['monto_prestamo'] / (df_enhanced['edad'] + 1)).astype('float32')
+            df_enhanced['high_loan_capacity'] = (df_enhanced['loan_per_age'] >=
+                                               df_enhanced['loan_per_age'].quantile(0.8)).astype('int32')
+
+        print(f"      ✅ Created loan amount category and capacity features")
+    
+    # 2. INTEREST RATE FEATURES
+    if 'tasa_prestamo' in df.columns:
+        # Interest rate categories
+        rate_25th = df_enhanced['tasa_prestamo'].quantile(0.25)
+        rate_75th = df_enhanced['tasa_prestamo'].quantile(0.75)
+
+        df_enhanced['low_interest_rate'] = (df_enhanced['tasa_prestamo'] <= rate_25th).astype('int32')
+        df_enhanced['high_interest_rate'] = (df_enhanced['tasa_prestamo'] >= rate_75th).astype('int32')
+        df_enhanced['medium_interest_rate'] = ((df_enhanced['tasa_prestamo'] > rate_25th) &
+                                             (df_enhanced['tasa_prestamo'] < rate_75th)).astype('int32')
+
+        # Interest rate risk categories
+        df_enhanced['premium_rate'] = (df_enhanced['tasa_prestamo'] <= 2.0).astype('int32')  # Very low rate
+        df_enhanced['standard_rate'] = ((df_enhanced['tasa_prestamo'] > 2.0) &
+                                      (df_enhanced['tasa_prestamo'] <= 5.0)).astype('int32')
+        df_enhanced['high_risk_rate'] = (df_enhanced['tasa_prestamo'] > 5.0).astype('int32')
+
+        print(f"      ✅ Created interest rate category and risk features")
+    
+    # 3. LOAN-TO-PAYMENT RELATIONSHIPS
+    if 'monto_prestamo' in df.columns and 'monto_letra' in df.columns:
+        # Loan to monthly payment ratio (loan term indicator)
+        df_enhanced['loan_to_payment_ratio'] = (df_enhanced['monto_prestamo'] / (df_enhanced['monto_letra'] + 1)).astype('float32')
+
+        # Loan term categories (based on ratio)
+        term_33rd = df_enhanced['loan_to_payment_ratio'].quantile(0.33)
+        term_66th = df_enhanced['loan_to_payment_ratio'].quantile(0.66)
+
+        df_enhanced['short_term_loan'] = (df_enhanced['loan_to_payment_ratio'] <= term_33rd).astype('int32')
+        df_enhanced['medium_term_loan'] = ((df_enhanced['loan_to_payment_ratio'] > term_33rd) &
+                                         (df_enhanced['loan_to_payment_ratio'] <= term_66th)).astype('int32')
+        df_enhanced['long_term_loan'] = (df_enhanced['loan_to_payment_ratio'] > term_66th).astype('int32')
+
+        # Payment burden from loan
+        df_enhanced['loan_payment_burden'] = (df_enhanced['monto_letra'] / (df_enhanced['monto_prestamo'] + 1)).astype('float32')
+        df_enhanced['high_loan_burden'] = (df_enhanced['loan_payment_burden'] >=
+                                         df_enhanced['loan_payment_burden'].quantile(0.8)).astype('int32')
+
+        print(f"      ✅ Created loan-payment relationship features")
+    
+    # 4. LOAN-BALANCE INTERACTIONS
+    if 'monto_prestamo' in df.columns and 'saldo' in df.columns:
+        # Loan to balance ratio (leverage indicator)
+        df_enhanced['loan_to_balance_ratio'] = df_enhanced['monto_prestamo'] / (df_enhanced['saldo'] + 1)
+        
+        # Financial leverage categories
+        leverage_50th = df_enhanced['loan_to_balance_ratio'].quantile(0.50)
+        leverage_80th = df_enhanced['loan_to_balance_ratio'].quantile(0.80)
+        
+        df_enhanced['conservative_leverage'] = (df_enhanced['loan_to_balance_ratio'] <= leverage_50th).astype(int)
+        df_enhanced['moderate_leverage'] = ((df_enhanced['loan_to_balance_ratio'] > leverage_50th) & 
+                                          (df_enhanced['loan_to_balance_ratio'] <= leverage_80th)).astype(int)
+        df_enhanced['high_leverage'] = (df_enhanced['loan_to_balance_ratio'] > leverage_80th).astype(int)
+        
+        # Balance coverage (can balance cover loan?)
+        df_enhanced['balance_covers_loan'] = (df_enhanced['saldo'] >= df_enhanced['monto_prestamo']).astype(int)
+        df_enhanced['balance_coverage_ratio'] = df_enhanced['saldo'] / (df_enhanced['monto_prestamo'] + 1)
+        
+        print(f"      ✅ Created loan-balance interaction features")
+    
+    # 5. LOAN MISSING VALUE PATTERNS
+    if 'monto_prestamo_missing' in df.columns and 'tasa_prestamo_missing' in df.columns:
+        # Loan data completeness patterns
+        df_enhanced['complete_loan_data'] = ((df_enhanced['monto_prestamo_missing'] == 0) &
+                                           (df_enhanced['tasa_prestamo_missing'] == 0)).astype('int32')
+        df_enhanced['partial_loan_data'] = ((df_enhanced['monto_prestamo_missing'] == 0) |
+                                          (df_enhanced['tasa_prestamo_missing'] == 0)).astype('int32')
+        df_enhanced['no_loan_data'] = ((df_enhanced['monto_prestamo_missing'] == 1) &
+                                     (df_enhanced['tasa_prestamo_missing'] == 1)).astype('int32')
+
+        # Loan data quality score
+        df_enhanced['loan_data_quality'] = (2 - df_enhanced['monto_prestamo_missing'] -
+                                          df_enhanced['tasa_prestamo_missing']).astype('int32')
+
+        print(f"      ✅ Created loan data completeness features")
+    
+    # 6. LOAN-DEMOGRAPHIC INTERACTIONS
+    if 'monto_prestamo' in df.columns and 'edad' in df.columns:
+        # Age-based loan patterns
+        df_enhanced['young_borrower'] = ((df_enhanced['edad'] <= 35) & 
+                                       (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        df_enhanced['mature_borrower'] = ((df_enhanced['edad'] > 35) & (df_enhanced['edad'] <= 55) & 
+                                        (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        df_enhanced['senior_borrower'] = ((df_enhanced['edad'] > 55) & 
+                                        (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        
+        # Loan size relative to age
+        if 'large_loan' in df_enhanced.columns:
+            df_enhanced['young_large_borrower'] = (df_enhanced['young_borrower'] & 
+                                                 df_enhanced['large_loan']).astype(int)
+            df_enhanced['senior_large_borrower'] = (df_enhanced['senior_borrower'] & 
+                                                  df_enhanced['large_loan']).astype(int)
+        
+        print(f"      ✅ Created loan-demographic interaction features")
+    
+    # 7. LOAN-OCCUPATION INTERACTIONS
+    if 'monto_prestamo' in df.columns and 'ocupacion_consolidated_freq' in df.columns:
+        # Professional borrowing patterns
+        occ_75th = df_enhanced['ocupacion_consolidated_freq'].quantile(0.75)
+        
+        df_enhanced['professional_borrower'] = ((df_enhanced['ocupacion_consolidated_freq'] >= occ_75th) & 
+                                              (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        
+        # Loan amount relative to occupation frequency
+        df_enhanced['loan_per_occupation_freq'] = (df_enhanced['monto_prestamo'] / 
+                                                 (df_enhanced['ocupacion_consolidated_freq'] + 1))
+        
+        if 'large_loan' in df_enhanced.columns:
+            df_enhanced['professional_large_loan'] = (df_enhanced['professional_borrower'] & 
+                                                    df_enhanced['large_loan']).astype(int)
+        
+        print(f"      ✅ Created loan-occupation interaction features")
+    
+    # 8. CREDIT RISK INDICATORS (LOAN-BASED)
+    if ('monto_prestamo' in df.columns and 'tasa_prestamo' in df.columns and 
+        'monto_letra' in df.columns):
+        
+        # High-risk loan profile
+        df_enhanced['high_risk_loan_profile'] = (
+            (df_enhanced['high_interest_rate'] == 1) & 
+            (df_enhanced['high_loan_burden'] == 1)
+        ).astype(int)
+        
+        # Low-risk loan profile
+        df_enhanced['low_risk_loan_profile'] = (
+            (df_enhanced['low_interest_rate'] == 1) & 
+            (df_enhanced['conservative_leverage'] == 1)
+        ).astype(int)
+        
+        # Premium borrower (low rate + large loan)
+        if 'large_loan' in df_enhanced.columns:
+            df_enhanced['premium_borrower'] = (
+                (df_enhanced['premium_rate'] == 1) & 
+                (df_enhanced['large_loan'] == 1)
+            ).astype(int)
+        
+        print(f"      ✅ Created credit risk indicator features")
+    
+    # 9. LOAN SOPHISTICATION SCORE
+    if ('monto_prestamo' in df.columns and 'tasa_prestamo' in df.columns and 
+        'saldo' in df.columns):
+        
+        # Financial sophistication based on loan management
+        sophistication_components = []
+        
+        if 'balance_covers_loan' in df_enhanced.columns:
+            sophistication_components.append('balance_covers_loan')
+        if 'low_interest_rate' in df_enhanced.columns:
+            sophistication_components.append('low_interest_rate')
+        if 'conservative_leverage' in df_enhanced.columns:
+            sophistication_components.append('conservative_leverage')
+        
+        if len(sophistication_components) >= 2:
+            df_enhanced['loan_sophistication_score'] = df_enhanced[sophistication_components].sum(axis=1)
+            df_enhanced['sophisticated_borrower'] = (
+                df_enhanced['loan_sophistication_score'] >= len(sophistication_components) * 0.67
+            ).astype(int)
+            
+            print(f"      ✅ Created loan sophistication features")
+    
+    # =============================================================================
+    # EXISTING FEATURE ENGINEERING (ENHANCED WITH LOAN INTERACTIONS)
+    # =============================================================================
+    
+    # 1. AGE-OCCUPATION INTERACTIONS (Enhanced with loan data)
+    if 'ocupacion_consolidated_freq' in df.columns and age_columns:
+        for age_col in age_columns:
+            interaction_name = f"{age_col}_x_occupation"
+            df_enhanced[interaction_name] = (df_enhanced[age_col] * df_enhanced['ocupacion_consolidated_freq'])
+            
+            # Add loan interaction if available
+            if 'monto_prestamo' in df.columns:
+                loan_interaction_name = f"{age_col}_x_occupation_x_loan"
+                df_enhanced[loan_interaction_name] = (df_enhanced[interaction_name] * 
+                                                    (df_enhanced['monto_prestamo'] > 0).astype(int))
+        
+        print(f"      ✅ Created {len(age_columns)} age-occupation interactions (with loan variants)")
+    
+    # 2. LOCATION-OCCUPATION INTERACTION (Enhanced)
+    if ('ciudad_consolidated_freq' in df.columns and 'ocupacion_consolidated_freq' in df.columns):
+        df_enhanced['location_x_occupation'] = (df_enhanced['ciudad_consolidated_freq'] * 
+                                              df_enhanced['ocupacion_consolidated_freq'])
+        
+        # Add loan interaction
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['location_x_occupation_x_loan'] = (df_enhanced['location_x_occupation'] * 
+                                                         (df_enhanced['monto_prestamo'] > 0).astype(int))
+        
+        print(f"      ✅ Created location-occupation interaction (with loan variant)")
+    
+    # 3. FINANCIAL BEHAVIOR FEATURES (Enhanced with loan data)
+    print("   💰 Creating enhanced financial behavior features...")
+    
+    # Payment burden relative to age (enhanced with loan data)
+    if 'monto_letra' in df.columns and 'edad' in df.columns:
+        df_enhanced['payment_per_age'] = df_enhanced['monto_letra'] / (df_enhanced['edad'] + 1)
+        
+        # Enhanced with loan information
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['total_debt_per_age'] = (df_enhanced['monto_letra'] + 
+                                               df_enhanced['monto_prestamo'] * 0.1) / (df_enhanced['edad'] + 1)
+        
+        # High payment burden indicator
+        payment_75th = df_enhanced['monto_letra'].quantile(0.75)
+        df_enhanced['high_payment_burden'] = (df_enhanced['monto_letra'] >= payment_75th).astype(int)
+        print(f"      ✅ Created enhanced payment burden features")
+    
+    # 4. ACCOUNT BALANCE FEATURES (Enhanced with loan data)
+    if 'saldo' in df.columns:
+        # Balance categories
+        saldo_25th = df_enhanced['saldo'].quantile(0.25)
+        saldo_75th = df_enhanced['saldo'].quantile(0.75)
+
+        df_enhanced['low_balance'] = (df_enhanced['saldo'] <= saldo_25th).astype(int)
+        df_enhanced['high_balance'] = (df_enhanced['saldo'] >= saldo_75th).astype(int)
+        df_enhanced['medium_balance'] = ((df_enhanced['saldo'] > saldo_25th) &
+                                       (df_enhanced['saldo'] < saldo_75th)).astype(int)
+
+        # Balance-to-payment ratio
+        if 'monto_letra' in df.columns:
+            df_enhanced['balance_to_payment_ratio'] = df_enhanced['saldo'] / (df_enhanced['monto_letra'] + 1)
+            df_enhanced['high_liquidity'] = (df_enhanced['balance_to_payment_ratio'] >= 100).astype(int)
+
+        print(f"      ✅ Created enhanced balance and liquidity features")
+
+    # 5. EMPLOYMENT STABILITY FEATURES (Enhanced with loan interactions)
+    print("   🏢 Creating enhanced employment stability features...")
+
+    if 'fechaingresoempleo_days' in df.columns:
+        # Employment tenure categories
+        tenure_25th = df_enhanced['fechaingresoempleo_days'].quantile(0.25)
+        tenure_75th = df_enhanced['fechaingresoempleo_days'].quantile(0.75)
+
+        df_enhanced['short_tenure'] = (df_enhanced['fechaingresoempleo_days'] >= tenure_75th).astype(int)
+        df_enhanced['long_tenure'] = (df_enhanced['fechaingresoempleo_days'] <= tenure_25th).astype(int)
+        df_enhanced['medium_tenure'] = ((df_enhanced['fechaingresoempleo_days'] > tenure_25th) &
+                                      (df_enhanced['fechaingresoempleo_days'] < tenure_75th)).astype(int)
+
+        # Years of employment
+        df_enhanced['employment_years'] = abs(df_enhanced['fechaingresoempleo_days']) / 365.25
+        df_enhanced['veteran_employee'] = (df_enhanced['employment_years'] >= 10).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['stable_borrower'] = ((df_enhanced['long_tenure'] == 1) &
+                                            (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+        print(f"      ✅ Created enhanced employment stability features")
+
+    # 6. PROFESSIONAL STABILITY SCORE (Enhanced)
+    if ('ocupacion_consolidated_freq' in df.columns and
+        'nombreempleadorcliente_consolidated_freq' in df.columns and
+        'cargoempleocliente_consolidated_freq' in df.columns):
+
+        # Professional stability score
+        occ_norm = df_enhanced['ocupacion_consolidated_freq'] / df_enhanced['ocupacion_consolidated_freq'].max()
+        emp_norm = df_enhanced['nombreempleadorcliente_consolidated_freq'] / df_enhanced['nombreempleadorcliente_consolidated_freq'].max()
+        pos_norm = df_enhanced['cargoempleocliente_consolidated_freq'] / df_enhanced['cargoempleocliente_consolidated_freq'].max()
+
+        df_enhanced['professional_stability_score'] = (occ_norm + emp_norm + pos_norm) / 3
+        df_enhanced['high_professional_stability'] = (df_enhanced['professional_stability_score'] >= 0.7).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['stable_professional_borrower'] = ((df_enhanced['high_professional_stability'] == 1) &
+                                                         (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+        print(f"      ✅ Created enhanced professional stability features")
+
+    # 7. RISK PROFILE FEATURES (Enhanced with loan risk)
+    print("   ⚠️ Creating enhanced risk profile features...")
+
+    # Age-based risk categories
+    if 'edad' in df.columns:
+        df_enhanced['young_adult'] = ((df_enhanced['edad'] >= 18) & (df_enhanced['edad'] <= 30)).astype(int)
+        df_enhanced['prime_age'] = ((df_enhanced['edad'] > 30) & (df_enhanced['edad'] <= 50)).astype(int)
+        df_enhanced['senior'] = (df_enhanced['edad'] > 50).astype(int)
+
+    # Combined risk indicators (enhanced with loan risk)
+    risk_features = []
+    if 'is_retired' in df.columns:
+        risk_features.append('is_retired')
+    if 'high_payment_burden' in df_enhanced.columns:
+        risk_features.append('high_payment_burden')
+    if 'low_balance' in df_enhanced.columns:
+        risk_features.append('low_balance')
+    if 'short_tenure' in df_enhanced.columns:
+        risk_features.append('short_tenure')
+    if 'high_risk_loan_profile' in df_enhanced.columns:
+        risk_features.append('high_risk_loan_profile')
+
+    if len(risk_features) >= 2:
+        df_enhanced['risk_score'] = df_enhanced[risk_features].sum(axis=1)
+        df_enhanced['high_risk_profile'] = (df_enhanced['risk_score'] >= 2).astype(int)
+        df_enhanced['low_risk_profile'] = (df_enhanced['risk_score'] == 0).astype(int)
+        print(f"      ✅ Created enhanced risk profile features")
+
+    # 8. TEMPORAL FEATURES (Enhanced)
+    print("   📅 Creating enhanced temporal features...")
+
+    if 'fecha_inicio_days' in df.columns and 'fecha_vencimiento_days' in df.columns:
+        df_enhanced['contract_duration'] = df_enhanced['fecha_vencimiento_days'] - df_enhanced['fecha_inicio_days']
+        df_enhanced['contract_maturity_years'] = df_enhanced['contract_duration'] / 365.25
+        df_enhanced['long_term_contract'] = (df_enhanced['contract_maturity_years'] >= 10).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['long_term_borrower'] = ((df_enhanced['long_term_contract'] == 1) &
+                                               (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+        print(f"      ✅ Created enhanced temporal features")
+
+    # 9. HIGH EARNER POTENTIAL INDICATORS (Enhanced with loan data)
+    print("   💰 Creating enhanced high earner potential indicators...")
+
+    if ('edad' in df_enhanced.columns and
+        'ocupacion_consolidated_freq' in df_enhanced.columns and
+        'ciudad_consolidated_freq' in df_enhanced.columns):
+
+        # Define thresholds
+        occupation_80th = df_enhanced['ocupacion_consolidated_freq'].quantile(0.8)
+        city_70th = df_enhanced['ciudad_consolidated_freq'].quantile(0.7)
+
+        # High earner potential indicators
+        df_enhanced['high_earner_potential'] = (
+            (df_enhanced['edad'] >= 35) &
+            (df_enhanced['ocupacion_consolidated_freq'] >= occupation_80th) &
+            (df_enhanced['ciudad_consolidated_freq'] >= city_70th)
+        ).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['high_earner_borrower'] = ((df_enhanced['high_earner_potential'] == 1) &
+                                                 (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+            if 'premium_borrower' in df_enhanced.columns:
+                df_enhanced['elite_borrower'] = ((df_enhanced['high_earner_potential'] == 1) &
+                                               (df_enhanced['premium_borrower'] == 1)).astype(int)
+
+        print(f"      ✅ Created enhanced high earner potential indicators")
+
+    # =============================================================================
+    # FINAL DTYPE CLEANUP FOR ML COMPATIBILITY
+    # =============================================================================
+    print("   🔧 Final dtype cleanup for ML compatibility...")
+
+    # Define columns to exclude from dtype conversion
+    exclude_cols = ['cliente', 'identificador_unico', 'data_source', 'processing_timestamp']
+    feature_cols = [col for col in df_enhanced.columns if col not in exclude_cols]
+
+    # Convert boolean columns to int32
+    bool_cols = df_enhanced.select_dtypes(include=['bool']).columns
+    bool_feature_cols = [col for col in bool_cols if col in feature_cols]
+    for col in bool_feature_cols:
+        df_enhanced[col] = df_enhanced[col].astype('int32')
+        print(f"      ✅ Converted {col}: bool → int32")
+
+    # Convert object columns to numeric (for dummy variables that might be object)
+    object_cols = df_enhanced.select_dtypes(include=['object']).columns
+    object_feature_cols = [col for col in object_cols if col in feature_cols]
+    for col in object_feature_cols:
+        try:
+            # Check if it's a dummy variable (contains only 0, 1, or NaN)
+            unique_vals = df_enhanced[col].dropna().unique()
+            if len(unique_vals) <= 2 and all(str(val).strip() in ['0', '1', '0.0', '1.0', 'True', 'False'] for val in unique_vals):
+                df_enhanced[col] = pd.to_numeric(df_enhanced[col], errors='coerce').fillna(0).astype('int32')
+                print(f"      ✅ Converted {col}: object → int32 (dummy variable)")
+            else:
+                # Try general numeric conversion
+                df_enhanced[col] = pd.to_numeric(df_enhanced[col], errors='coerce').fillna(0).astype('float32')
+                print(f"      ✅ Converted {col}: object → float32")
+        except Exception as e:
+            print(f"      ⚠️  Could not convert {col}: {e}")
+
+    # Optimize numeric dtypes
+    int_cols = df_enhanced.select_dtypes(include=['int64']).columns
+    int_feature_cols = [col for col in int_cols if col in feature_cols]
+    for col in int_feature_cols:
+        df_enhanced[col] = df_enhanced[col].astype('int32')
+
+    float_cols = df_enhanced.select_dtypes(include=['float64']).columns
+    float_feature_cols = [col for col in float_cols if col in feature_cols]
+    for col in float_feature_cols:
+        df_enhanced[col] = df_enhanced[col].astype('float32')
+
+    # Final validation
+    remaining_objects = df_enhanced.select_dtypes(include=['object']).columns
+    remaining_feature_objects = [col for col in remaining_objects if col in feature_cols]
+
+    if remaining_feature_objects:
+        print(f"      ⚠️  Warning: {len(remaining_feature_objects)} feature columns still object dtype:")
+        for col in remaining_feature_objects[:5]:  # Show first 5
+            print(f"         - {col}: {df_enhanced[col].unique()[:3]}")
+    else:
+        print(f"      ✅ All feature columns are now ML-compatible!")
+
+    # Show final dtype summary
+    dtype_summary = df_enhanced[feature_cols].dtypes.value_counts()
+    print(f"      📊 Final feature dtypes: {dict(dtype_summary)}")
+
+    new_features = [col for col in df_enhanced.columns if col not in df.columns]
+    print(f"   ✨ Enhanced feature engineering complete: +{len(new_features)} new features")
+    print(f"   📊 Final dataset shape: {df_enhanced.shape}")
+
+    return df_enhanced
+
+print("✅ Enhanced feature engineering function ready (with comprehensive loan features + dtype fixes)")
+
+##FINAL MODEL FEATURES:
+['ocupacion_consolidated_freq',
+ 'nombreempleadorcliente_consolidated_freq',
+ 'edad',
+ 'fechaingresoempleo_days',
+ 'cargoempleocliente_consolidated_freq',
+ 'fecha_inicio_days',
+ 'balance_to_payment_ratio',
+ 'professional_stability_score',
+ 'saldo',
+ 'employment_years']

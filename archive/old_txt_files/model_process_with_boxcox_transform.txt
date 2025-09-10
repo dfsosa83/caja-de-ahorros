@@ -1,0 +1,1291 @@
+# ===============================================================================
+# COMPREHENSIVE MODEL PROCESS WITH BOX-COX TRANSFORMATION
+# ===============================================================================
+# This file contains the complete model training pipeline with Box-Cox transformation
+# for optimal performance on skewed income data.
+#
+# KEY ADVANTAGES OVER LOG TRANSFORMATION:
+# 1. Automatic optimal lambda parameter selection
+# 2. Better handling of zero and small values
+# 3. Data-driven transformation (not assumption-based)
+# 4. Potentially superior normality and model performance
+# 5. More flexible than log (log is Box-Cox with λ=0)
+# ===============================================================================
+
+# %%
+# SECTION 9: PREPARE FINAL DATASETS FOR MODELING
+# =============================================================================
+print("\n🎯 PREPARING FINAL DATASETS FOR BOX-COX TRANSFORMATION")
+print("-" * 60)
+
+# EXPLICIT FEATURE SELECTION APPROACH
+id_columns = ['cliente', 'identificador_unico']
+target_column = 'ingresos_reportados'
+
+# Manually specify ONLY the features you want to use
+feature_columns = selected_features_final
+
+# Verify all selected features exist in the dataset
+available_features = []
+missing_features = []
+
+for feature in feature_columns:
+    if feature in train_df_enhanced.columns:
+        available_features.append(feature)
+    else:
+        missing_features.append(feature)
+
+if missing_features:
+    print(f"⚠️  Missing features (will be skipped): {missing_features}")
+
+feature_columns = available_features
+
+print(f"   📊 Selected feature columns: {len(feature_columns)}")
+print(f"   🎯 Target column: {target_column}")
+
+# Create feature matrices and targets
+X_train = train_df_enhanced[feature_columns].copy()
+y_train = train_df_enhanced[target_column].copy()
+
+X_valid = valid_df_enhanced[feature_columns].copy()
+y_valid = valid_df_enhanced[target_column].copy()
+
+X_test = test_df_enhanced[feature_columns].copy()
+y_test = test_df_enhanced[target_column].copy()
+
+print(f"\n📈 FINAL DATASET SHAPES:")
+print(f"   X_train: {X_train.shape}")
+print(f"   X_valid: {X_valid.shape}")
+print(f"   X_test: {X_test.shape}")
+
+# Show selected features
+print(f"\n📋 SELECTED FEATURES:")
+for i, feature in enumerate(feature_columns, 1):
+    print(f"   {i:2d}. {feature}")
+
+# Verify data quality
+print(f"\n✅ DATA QUALITY CHECKS:")
+print(f"   Missing values in X_train: {X_train.isnull().sum().sum()}")
+print(f"   Missing values in y_train: {y_train.isnull().sum()}")
+print(f"   All features numeric: {all(X_train.dtypes.apply(lambda x: x in ['int64', 'float64']))}")
+
+# %%
+# SECTION 9.5: ZERO INCOME ANALYSIS AND HANDLING FOR BOX-COX
+# =============================================================================
+print("\n🔍 ZERO INCOME ANALYSIS FOR BOX-COX TRANSFORMATION")
+print("-" * 60)
+
+def analyze_zero_incomes_boxcox(y_train, y_valid, y_test, train_df, valid_df, test_df):
+    """
+    Analyze zero income records for Box-Cox transformation strategy
+    
+    BOX-COX ZERO HANDLING STRATEGIES:
+    =================================
+    1. REMOVE ZEROS: Cleanest approach, works with any λ
+    2. ADD SMALL CONSTANT: y_new = y + c, then Box-Cox
+    3. USE λ > 0: Box-Cox can handle zeros when λ > 0
+    
+    RECOMMENDATION LOGIC:
+    - If zeros < 2%: Remove (cleanest)
+    - If zeros 2-5%: Add small constant
+    - If zeros > 5%: Keep and use λ > 0
+    """
+    
+    # Count zero incomes in each set
+    zero_train = (y_train == 0).sum()
+    zero_valid = (y_valid == 0).sum()
+    zero_test = (y_test == 0).sum()
+    
+    total_train = len(y_train)
+    total_valid = len(y_valid)
+    total_test = len(y_test)
+    
+    print(f"📊 Zero Income Analysis for Box-Cox:")
+    print(f"   Training:   {zero_train:,} / {total_train:,} ({zero_train/total_train*100:.1f}%)")
+    print(f"   Validation: {zero_valid:,} / {total_valid:,} ({zero_valid/total_valid*100:.1f}%)")
+    print(f"   Test:       {zero_test:,} / {total_test:,} ({zero_test/total_test*100:.1f}%)")
+    
+    # Calculate total zero percentage
+    total_zeros = zero_train + zero_valid + zero_test
+    total_records = total_train + total_valid + total_test
+    zero_percentage = total_zeros / total_records * 100
+    
+    print(f"\n💡 BOX-COX STRATEGY RECOMMENDATION:")
+    if zero_percentage < 2:
+        strategy = "remove_zeros"
+        print(f"   ✅ REMOVE ZEROS: {zero_percentage:.1f}% is very low")
+        print(f"   📝 Cleanest approach - allows any λ value")
+    elif zero_percentage < 5:
+        strategy = "add_constant"
+        print(f"   🔧 ADD SMALL CONSTANT: {zero_percentage:.1f}% zeros")
+        print(f"   📝 Add $1 to all incomes, then apply Box-Cox")
+    else:
+        strategy = "keep_zeros"
+        print(f"   🔄 KEEP ZEROS: {zero_percentage:.1f}% is significant")
+        print(f"   📝 Use Box-Cox with λ > 0 constraint")
+    
+    return strategy, zero_percentage
+
+# Analyze zero incomes for Box-Cox
+boxcox_strategy, zero_pct = analyze_zero_incomes_boxcox(y_train, y_valid, y_test, 
+                                                       train_df_enhanced, valid_df_enhanced, test_df_enhanced)
+
+# Apply Box-Cox strategy
+BOXCOX_STRATEGY = "remove_zeros"  # Options: "remove_zeros", "add_constant", "keep_zeros"
+
+if BOXCOX_STRATEGY == "remove_zeros" and zero_pct < 5:
+    print(f"\n🚮 REMOVING ZERO INCOME RECORDS FOR BOX-COX")
+    print("-" * 50)
+    
+    # Create masks for non-zero incomes
+    train_mask = (y_train > 0)
+    valid_mask = (y_valid > 0)
+    test_mask = (y_test > 0)
+    
+    # Filter datasets
+    X_train = X_train[train_mask].copy()
+    y_train = y_train[train_mask].copy()
+    
+    X_valid = X_valid[valid_mask].copy()
+    y_valid = y_valid[valid_mask].copy()
+    
+    X_test = X_test[test_mask].copy()
+    y_test = y_test[test_mask].copy()
+    
+    print(f"   ✅ Filtered datasets:")
+    print(f"      X_train: {X_train.shape}")
+    print(f"      X_valid: {X_valid.shape}")
+    print(f"      X_test: {X_test.shape}")
+    
+    # Update enhanced dataframes for consistency
+    train_df_enhanced = train_df_enhanced[train_mask].copy()
+    valid_df_enhanced = valid_df_enhanced[valid_mask].copy()
+    test_df_enhanced = test_df_enhanced[test_mask].copy()
+    
+elif BOXCOX_STRATEGY == "add_constant":
+    print(f"\n🔧 ADDING SMALL CONSTANT FOR BOX-COX COMPATIBILITY")
+    print("-" * 50)
+    
+    # Add small constant to handle zeros
+    CONSTANT = 1.0  # Add $1 to all incomes
+    y_train = y_train + CONSTANT
+    y_valid = y_valid + CONSTANT
+    y_test = y_test + CONSTANT
+    
+    print(f"   ✅ Added ${CONSTANT} to all income values")
+    print(f"   📊 New min income: ${y_train.min():.2f}")
+    
+else:
+    print(f"\n📝 KEEPING ZERO INCOME RECORDS")
+    print("   💡 Will use Box-Cox with λ > 0 constraint")
+
+# %%
+# SECTION 10: BOX-COX TRANSFORMATION FOR OPTIMAL MODEL PERFORMANCE
+# =============================================================================
+print("\n🔄 APPLYING BOX-COX TRANSFORMATION TO TARGET VARIABLE")
+print("-" * 70)
+
+from scipy import stats
+from scipy.stats import boxcox
+import numpy as np
+
+def apply_boxcox_transform(y_train, y_valid=None, y_test=None, lambda_range=(-2, 2)):
+    """
+    Apply Box-Cox transformation with optimal lambda selection
+    
+    WHY BOX-COX TRANSFORMATION?
+    ===========================
+    1. OPTIMAL NORMALITY: Automatically finds best λ for normality
+    2. FLEXIBLE: Includes log (λ=0), square root (λ=0.5), square (λ=2)
+    3. DATA-DRIVEN: Uses maximum likelihood to find optimal λ
+    4. BETTER THAN LOG: Often superior for income/financial data
+    5. HANDLES SKEWNESS: Reduces skewness more effectively than log
+    
+    BOX-COX FORMULA:
+    ================
+    if λ = 0: y_transformed = log(y)
+    if λ ≠ 0: y_transformed = (y^λ - 1) / λ
+    
+    COMMON λ VALUES:
+    ================
+    λ = -1: Inverse transformation
+    λ = -0.5: Inverse square root
+    λ = 0: Natural log (same as log transform)
+    λ = 0.5: Square root
+    λ = 1: No transformation (linear)
+    λ = 2: Square transformation
+    
+    Returns:
+    --------
+    Transformed targets, optimal lambda, and statistics
+    """
+    print(f"📊 ORIGINAL TARGET STATISTICS:")
+    print(f"   Mean: ${y_train.mean():,.2f}")
+    print(f"   Median: ${y_train.median():,.2f}")
+    print(f"   Std: ${y_train.std():,.2f}")
+    print(f"   Min: ${y_train.min():,.2f}")
+    print(f"   Max: ${y_train.max():,.2f}")
+    print(f"   Skewness: {y_train.skew():.3f}")
+    print(f"   Kurtosis: {y_train.kurtosis():.3f}")
+    
+    # Find optimal lambda using maximum likelihood
+    print(f"\n🔍 FINDING OPTIMAL BOX-COX LAMBDA...")
+    print(f"   Search range: λ ∈ [{lambda_range[0]}, {lambda_range[1]}]")
+    
+    # Apply Box-Cox transformation
+    y_train_boxcox, optimal_lambda = boxcox(y_train, lmbda=None)
+    
+    print(f"\n🎯 OPTIMAL LAMBDA FOUND: λ = {optimal_lambda:.4f}")
+    
+    # Interpret lambda value
+    if abs(optimal_lambda) < 0.01:
+        interpretation = "≈ Log transformation"
+    elif abs(optimal_lambda - 0.5) < 0.01:
+        interpretation = "≈ Square root transformation"
+    elif abs(optimal_lambda - 1.0) < 0.01:
+        interpretation = "≈ No transformation (linear)"
+    elif abs(optimal_lambda - 2.0) < 0.01:
+        interpretation = "≈ Square transformation"
+    elif abs(optimal_lambda + 0.5) < 0.01:
+        interpretation = "≈ Inverse square root"
+    elif abs(optimal_lambda + 1.0) < 0.01:
+        interpretation = "≈ Inverse transformation"
+    else:
+        interpretation = f"Custom power transformation"
+    
+    print(f"   📝 Interpretation: {interpretation}")
+    
+    print(f"\n📊 BOX-COX TRANSFORMED TARGET STATISTICS:")
+    print(f"   Mean: {y_train_boxcox.mean():.3f}")
+    print(f"   Median: {np.median(y_train_boxcox):.3f}")
+    print(f"   Std: {y_train_boxcox.std():.3f}")
+    print(f"   Min: {y_train_boxcox.min():.3f}")
+    print(f"   Max: {y_train_boxcox.max():.3f}")
+    print(f"   Skewness: {pd.Series(y_train_boxcox).skew():.3f}")
+    print(f"   Kurtosis: {pd.Series(y_train_boxcox).kurtosis():.3f}")
+    
+    # Calculate improvement metrics
+    original_skew = y_train.skew()
+    transformed_skew = pd.Series(y_train_boxcox).skew()
+    skew_improvement = abs(original_skew) - abs(transformed_skew)
+    
+    original_kurtosis = y_train.kurtosis()
+    transformed_kurtosis = pd.Series(y_train_boxcox).kurtosis()
+    kurtosis_improvement = abs(original_kurtosis) - abs(transformed_kurtosis)
+    
+    print(f"\n📈 BOX-COX TRANSFORMATION IMPROVEMENTS:")
+    print(f"   Skewness: {original_skew:.3f} → {transformed_skew:.3f} (Δ: {skew_improvement:.3f})")
+    print(f"   Kurtosis: {original_kurtosis:.3f} → {transformed_kurtosis:.3f} (Δ: {kurtosis_improvement:.3f})")
+    
+    results = [y_train_boxcox]
+    
+    # Transform validation set if provided
+    if y_valid is not None:
+        if optimal_lambda == 0:
+            y_valid_boxcox = np.log(y_valid)
+        else:
+            y_valid_boxcox = (np.power(y_valid, optimal_lambda) - 1) / optimal_lambda
+        results.append(y_valid_boxcox)
+        print(f"   ✅ Validation set transformed with λ = {optimal_lambda:.4f}")
+    
+    # Transform test set if provided
+    if y_test is not None:
+        if optimal_lambda == 0:
+            y_test_boxcox = np.log(y_test)
+        else:
+            y_test_boxcox = (np.power(y_test, optimal_lambda) - 1) / optimal_lambda
+        results.append(y_test_boxcox)
+        print(f"   ✅ Test set transformed with λ = {optimal_lambda:.4f}")
+    
+    # Store transformation parameters
+    transform_params = {
+        'lambda': optimal_lambda,
+        'interpretation': interpretation,
+        'skew_improvement': skew_improvement,
+        'kurtosis_improvement': kurtosis_improvement,
+        'constant_added': CONSTANT if BOXCOX_STRATEGY == "add_constant" else 0
+    }
+    
+    if len(results) > 1:
+        return results + [transform_params]
+    else:
+        return results[0], transform_params
+
+def inverse_boxcox_transform(y_boxcox_pred, lambda_val, constant_added=0):
+    """
+    Convert Box-Cox predictions back to original scale
+    
+    CRITICAL FOR EVALUATION:
+    -----------------------
+    - ALL PREDICTIONS must be converted back to original scale
+    - ALL EVALUATION METRICS must use original scale
+    - This ensures business interpretability
+    
+    Parameters:
+    -----------
+    y_boxcox_pred : array-like
+        Predictions in Box-Cox scale
+    lambda_val : float
+        Lambda parameter used in Box-Cox transformation
+    constant_added : float
+        Constant added before transformation (if any)
+        
+    Returns:
+    --------
+    array-like : Predictions in original scale (dollars)
+    """
+    if lambda_val == 0:
+        # Log transformation case
+        y_pred_original = np.exp(y_boxcox_pred)
+    else:
+        # General Box-Cox case
+        y_pred_original = np.power(lambda_val * y_boxcox_pred + 1, 1/lambda_val)
+    
+    # Subtract constant if it was added
+    if constant_added > 0:
+        y_pred_original = y_pred_original - constant_added
+        # Ensure no negative predictions
+        y_pred_original = np.maximum(y_pred_original, 0)
+    
+    return y_pred_original
+
+# Apply Box-Cox transformation to all target sets
+print("🔄 Applying Box-Cox transformation...")
+if y_valid is not None and y_test is not None:
+    y_train_boxcox, y_valid_boxcox, y_test_boxcox, transform_params = apply_boxcox_transform(y_train, y_valid, y_test)
+else:
+    y_train_boxcox, transform_params = apply_boxcox_transform(y_train)
+
+optimal_lambda = transform_params['lambda']
+constant_added = transform_params['constant_added']
+
+print(f"\n✅ BOX-COX TRANSFORMATION COMPLETED!")
+print(f"   🎯 Optimal λ: {optimal_lambda:.4f} ({transform_params['interpretation']})")
+print(f"   📊 Skewness improvement: {transform_params['skew_improvement']:.3f}")
+print(f"   📊 Kurtosis improvement: {transform_params['kurtosis_improvement']:.3f}")
+
+print(f"\n🎯 READY FOR MODEL TRAINING WITH BOX-COX TRANSFORMED TARGETS!")
+print(f"   💡 Remember: All predictions will be inverse-transformed for evaluation")
+print(f"   🔧 Lambda parameter: {optimal_lambda:.4f}")
+print(f"   🔧 Constant added: ${constant_added}")
+
+# %%
+# SECTION 10.5: BOX-COX VS LOG TRANSFORMATION COMPARISON
+# =============================================================================
+print("\n📊 BOX-COX VS LOG TRANSFORMATION COMPARISON")
+print("-" * 60)
+
+def compare_transformations(y_train_original):
+    """
+    Compare Box-Cox vs Log transformation effectiveness
+    """
+    print("🔍 TRANSFORMATION EFFECTIVENESS COMPARISON:")
+    print("=" * 50)
+
+    # Original statistics
+    orig_skew = y_train_original.skew()
+    orig_kurtosis = y_train_original.kurtosis()
+
+    # Log transformation
+    y_log = np.log1p(y_train_original)
+    log_skew = y_log.skew()
+    log_kurtosis = y_log.kurtosis()
+
+    # Box-Cox transformation (already calculated)
+    boxcox_skew = pd.Series(y_train_boxcox).skew()
+    boxcox_kurtosis = pd.Series(y_train_boxcox).kurtosis()
+
+    print(f"SKEWNESS COMPARISON:")
+    print(f"   Original:  {orig_skew:8.3f}")
+    print(f"   Log:       {log_skew:8.3f} (improvement: {abs(orig_skew) - abs(log_skew):6.3f})")
+    print(f"   Box-Cox:   {boxcox_skew:8.3f} (improvement: {abs(orig_skew) - abs(boxcox_skew):6.3f})")
+
+    print(f"\nKURTOSIS COMPARISON:")
+    print(f"   Original:  {orig_kurtosis:8.3f}")
+    print(f"   Log:       {log_kurtosis:8.3f} (improvement: {abs(orig_kurtosis) - abs(log_kurtosis):6.3f})")
+    print(f"   Box-Cox:   {boxcox_kurtosis:8.3f} (improvement: {abs(orig_kurtosis) - abs(boxcox_kurtosis):6.3f})")
+
+    # Determine winner
+    log_total_improvement = (abs(orig_skew) - abs(log_skew)) + (abs(orig_kurtosis) - abs(log_kurtosis))
+    boxcox_total_improvement = (abs(orig_skew) - abs(boxcox_skew)) + (abs(orig_kurtosis) - abs(boxcox_kurtosis))
+
+    print(f"\n🏆 TRANSFORMATION WINNER:")
+    if boxcox_total_improvement > log_total_improvement:
+        winner = "Box-Cox"
+        advantage = boxcox_total_improvement - log_total_improvement
+        print(f"   🥇 Box-Cox wins by {advantage:.3f} points")
+        print(f"   💡 Box-Cox should provide better model performance")
+    elif log_total_improvement > boxcox_total_improvement:
+        winner = "Log"
+        advantage = log_total_improvement - boxcox_total_improvement
+        print(f"   🥇 Log wins by {advantage:.3f} points")
+        print(f"   💡 Log transformation was sufficient")
+    else:
+        winner = "Tie"
+        print(f"   🤝 Tie - both transformations equally effective")
+
+    return winner, boxcox_total_improvement, log_total_improvement
+
+# Compare transformations
+transformation_winner, boxcox_score, log_score = compare_transformations(y_train)
+
+# %%
+# SECTION 11: FEATURE SCALING AND MODEL SETUP FOR BOX-COX
+# =============================================================================
+print("\n⚖️ FEATURE SCALING AND MODEL CONFIGURATION FOR BOX-COX")
+print("-" * 70)
+
+# Apply robust scaling to features
+print("🔄 Applying RobustScaler to features...")
+from sklearn.preprocessing import RobustScaler
+
+scaler = RobustScaler()
+X_train_scaled = pd.DataFrame(
+    scaler.fit_transform(X_train),
+    columns=X_train.columns,
+    index=X_train.index
+)
+X_valid_scaled = pd.DataFrame(
+    scaler.transform(X_valid),
+    columns=X_valid.columns,
+    index=X_valid.index
+)
+X_test_scaled = pd.DataFrame(
+    scaler.transform(X_test),
+    columns=X_test.columns,
+    index=X_test.index
+)
+print("   ✅ Feature scaling complete")
+
+# Model configurations optimized for Box-Cox transformed targets
+print("\n🤖 CONFIGURING MODELS FOR BOX-COX TRANSFORMED TARGETS")
+print("-" * 60)
+
+"""
+MODEL HYPERPARAMETER ADJUSTMENTS FOR BOX-COX SCALE:
+===================================================
+
+1. LEARNING RATES: Adjusted based on λ value
+2. REGULARIZATION: Optimized for Box-Cox scale variance
+3. TREE DEPTH: Adapted for Box-Cox transformation patterns
+4. EARLY STOPPING: Tuned for Box-Cox convergence behavior
+
+WHY THESE CHANGES?
+- Box-Cox scale depends on λ value
+- Different λ values require different hyperparameters
+- Optimal λ found: {optimal_lambda:.4f}
+- Scale variance differs from log transformation
+"""
+
+# Adjust hyperparameters based on lambda value
+if abs(optimal_lambda) < 0.1:  # Close to log transformation
+    learning_rate_factor = 1.0
+    depth_factor = 1.0
+    regularization_factor = 1.0
+elif optimal_lambda > 0.5:  # Square root or higher
+    learning_rate_factor = 0.8  # More conservative
+    depth_factor = 1.2  # Deeper trees
+    regularization_factor = 1.2  # More regularization
+else:  # Other lambda values
+    learning_rate_factor = 0.9
+    depth_factor = 1.1
+    regularization_factor = 1.1
+
+models = {
+    'XGBoost_BoxCox': xgb.XGBRegressor(
+        n_estimators=1000,
+        max_depth=int(20 * depth_factor),
+        learning_rate=0.01 * learning_rate_factor,
+        subsample=0.85,
+        colsample_bytree=0.85,
+        reg_alpha=0.1 * regularization_factor,
+        reg_lambda=0.1 * regularization_factor,
+        min_child_weight=5,
+        random_state=42,
+        n_jobs=-1,
+        verbosity=0
+    ),
+    'LightGBM_BoxCox': lgb.LGBMRegressor(
+        n_estimators=1500,
+        max_depth=int(25 * depth_factor),
+        learning_rate=0.005 * learning_rate_factor,
+        subsample=0.85,
+        colsample_bytree=0.85,
+        num_leaves=int(200 * depth_factor),
+        min_child_samples=20,
+        reg_alpha=0.1 * regularization_factor,
+        reg_lambda=0.1 * regularization_factor,
+        random_state=42,
+        n_jobs=-1,
+        verbose=-1
+    ),
+    'RandomForest_BoxCox': RandomForestRegressor(
+        n_estimators=500,
+        max_depth=int(25 * depth_factor),
+        min_samples_split=10,
+        min_samples_leaf=5,
+        max_features='sqrt',
+        random_state=42,
+        n_jobs=-1
+    )
+}
+
+print(f"   ✅ Configured {len(models)} models for Box-Cox training (λ = {optimal_lambda:.4f})")
+print(f"   🔧 Applied adjustment factors: LR={learning_rate_factor:.1f}, Depth={depth_factor:.1f}, Reg={regularization_factor:.1f}")
+
+# %%
+# SECTION 12: CROSS-VALIDATION WITH BOX-COX TRANSFORMATION
+# =============================================================================
+print("\n📊 CROSS-VALIDATION WITH BOX-COX TRANSFORMATION")
+print("-" * 70)
+
+from sklearn.model_selection import KFold, cross_val_score
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+
+def evaluate_model_cv_boxcox(model, X, y_boxcox, y_original, model_name, lambda_val, constant_added=0, cv_folds=4):
+    """
+    Evaluate model using cross-validation with proper Box-Cox transformation handling
+
+    CRITICAL EVALUATION PROCESS:
+    ===========================
+    1. Train model on BOX-COX TRANSFORMED targets
+    2. Make predictions in Box-Cox scale
+    3. INVERSE TRANSFORM predictions to original scale
+    4. Evaluate metrics on ORIGINAL scale
+    5. This ensures business-relevant performance metrics
+
+    Parameters:
+    -----------
+    model : sklearn estimator
+        Model to evaluate
+    X : DataFrame
+        Feature matrix
+    y_boxcox : Series/array
+        Box-Cox transformed target
+    y_original : Series
+        Original scale target (for evaluation)
+    model_name : str
+        Name for reporting
+    lambda_val : float
+        Box-Cox lambda parameter
+    constant_added : float
+        Constant added before transformation
+    cv_folds : int
+        Number of CV folds
+
+    Returns:
+    --------
+    dict : Cross-validation results
+    """
+    print(f"\n   🔄 Evaluating {model_name} with Box-Cox transformation (λ={lambda_val:.4f})...")
+
+    # Setup cross-validation
+    kf = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
+
+    # Storage for results
+    cv_r2_scores = []
+    cv_rmse_scores = []
+    cv_mae_scores = []
+
+    # Manual cross-validation to handle inverse transformation
+    for fold, (train_idx, val_idx) in enumerate(kf.split(X)):
+        # Split data
+        X_fold_train, X_fold_val = X.iloc[train_idx], X.iloc[val_idx]
+        y_fold_train_boxcox = y_boxcox[train_idx] if isinstance(y_boxcox, np.ndarray) else y_boxcox.iloc[train_idx]
+        y_fold_val_original = y_original.iloc[val_idx]
+
+        # Train on Box-Cox scale
+        model_copy = clone(model)
+        model_copy.fit(X_fold_train, y_fold_train_boxcox)
+
+        # Predict in Box-Cox scale
+        y_pred_boxcox = model_copy.predict(X_fold_val)
+
+        # CRITICAL: Inverse transform to original scale
+        y_pred_original = inverse_boxcox_transform(y_pred_boxcox, lambda_val, constant_added)
+
+        # Evaluate on original scale
+        r2 = r2_score(y_fold_val_original, y_pred_original)
+        rmse = np.sqrt(mean_squared_error(y_fold_val_original, y_pred_original))
+        mae = mean_absolute_error(y_fold_val_original, y_pred_original)
+
+        cv_r2_scores.append(r2)
+        cv_rmse_scores.append(rmse)
+        cv_mae_scores.append(mae)
+
+        print(f"      Fold {fold+1}: R²={r2:.4f}, RMSE=${rmse:,.0f}, MAE=${mae:,.0f}")
+
+    # Calculate statistics
+    cv_r2_mean = np.mean(cv_r2_scores)
+    cv_r2_std = np.std(cv_r2_scores)
+    cv_rmse_mean = np.mean(cv_rmse_scores)
+    cv_rmse_std = np.std(cv_rmse_scores)
+    cv_mae_mean = np.mean(cv_mae_scores)
+    cv_mae_std = np.std(cv_mae_scores)
+
+    print(f"      📈 CV R²: {cv_r2_mean:.4f} ± {cv_r2_std:.4f}")
+    print(f"      📈 CV RMSE: ${cv_rmse_mean:,.0f} ± ${cv_rmse_std:,.0f}")
+    print(f"      📈 CV MAE: ${cv_mae_mean:,.0f} ± ${cv_mae_std:,.0f}")
+
+    return {
+        'cv_r2_mean': cv_r2_mean,
+        'cv_r2_std': cv_r2_std,
+        'cv_rmse_mean': cv_rmse_mean,
+        'cv_rmse_std': cv_rmse_std,
+        'cv_mae_mean': cv_mae_mean,
+        'cv_mae_std': cv_mae_std,
+        'cv_r2_scores': cv_r2_scores,
+        'cv_rmse_scores': cv_rmse_scores,
+        'cv_mae_scores': cv_mae_scores
+    }
+
+# Import required modules
+from sklearn.base import clone
+import xgboost as xgb
+import lightgbm as lgb
+from sklearn.ensemble import RandomForestRegressor
+
+# Evaluate all models with cross-validation
+cv_results = {}
+for model_name, model in models.items():
+    cv_results[model_name] = evaluate_model_cv_boxcox(
+        model, X_train_scaled, y_train_boxcox, y_train, model_name, optimal_lambda, constant_added
+    )
+
+print(f"\n✅ Cross-validation completed for all Box-Cox models!")
+
+# %%
+# SECTION 13: FINAL MODEL TRAINING WITH BOX-COX TRANSFORMATION
+# =============================================================================
+print("\n🎯 FINAL MODEL TRAINING WITH BOX-COX TRANSFORMATION")
+print("-" * 70)
+
+def train_and_evaluate_final_boxcox(model, X_train, y_train_boxcox, y_train_orig,
+                                   X_valid, y_valid_boxcox, y_valid_orig, model_name,
+                                   lambda_val, constant_added=0):
+    """
+    Train final model and evaluate with proper Box-Cox transformation handling
+
+    EVALUATION METHODOLOGY:
+    ======================
+    1. Train model on BOX-COX TRANSFORMED targets
+    2. Make predictions in Box-Cox scale
+    3. INVERSE TRANSFORM all predictions to original scale
+    4. Calculate ALL METRICS on original scale
+    5. Report both training and validation performance
+
+    This ensures:
+    - Business-interpretable metrics (in dollars)
+    - Fair comparison with other transformation methods
+    - Proper assessment of real-world performance
+    """
+    print(f"\n   🚀 Training final {model_name} (λ={lambda_val:.4f})...")
+
+    # Train model on Box-Cox transformed targets
+    model.fit(X_train, y_train_boxcox)
+
+    # Make predictions in Box-Cox scale
+    y_pred_train_boxcox = model.predict(X_train)
+    y_pred_valid_boxcox = model.predict(X_valid)
+
+    # CRITICAL: Inverse transform to original scale
+    y_pred_train_orig = inverse_boxcox_transform(y_pred_train_boxcox, lambda_val, constant_added)
+    y_pred_valid_orig = inverse_boxcox_transform(y_pred_valid_boxcox, lambda_val, constant_added)
+
+    # Calculate metrics on ORIGINAL scale
+    train_rmse = np.sqrt(mean_squared_error(y_train_orig, y_pred_train_orig))
+    valid_rmse = np.sqrt(mean_squared_error(y_valid_orig, y_pred_valid_orig))
+
+    train_r2 = r2_score(y_train_orig, y_pred_train_orig)
+    valid_r2 = r2_score(y_valid_orig, y_pred_valid_orig)
+
+    train_mae = mean_absolute_error(y_train_orig, y_pred_train_orig)
+    valid_mae = mean_absolute_error(y_valid_orig, y_pred_valid_orig)
+
+    # Calculate ROBUST MAPE (excludes very low incomes)
+    def calculate_robust_mape(y_true, y_pred, threshold=1000):
+        mask = y_true >= threshold
+        if mask.sum() == 0:
+            return np.nan, 0
+        mape = np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100
+        return mape, mask.sum()
+
+    train_mape = np.mean(np.abs((y_train_orig - y_pred_train_orig) / y_train_orig)) * 100
+    valid_mape = np.mean(np.abs((y_valid_orig - y_pred_valid_orig) / y_valid_orig)) * 100
+
+    train_mape_robust, train_robust_count = calculate_robust_mape(y_train_orig, y_pred_train_orig)
+    valid_mape_robust, valid_robust_count = calculate_robust_mape(y_valid_orig, y_pred_valid_orig)
+
+    print(f"      📊 Training   - R²: {train_r2:.4f}, RMSE: ${train_rmse:,.0f}, MAE: ${train_mae:,.0f}")
+    print(f"      📊 Validation - R²: {valid_r2:.4f}, RMSE: ${valid_rmse:,.0f}, MAE: ${valid_mae:,.0f}")
+    print(f"      📊 Standard MAPE - Train: {train_mape:.1f}%, Valid: {valid_mape:.1f}%")
+    print(f"      📊 Robust MAPE (≥$1K) - Train: {train_mape_robust:.1f}% (n={train_robust_count}), Valid: {valid_mape_robust:.1f}% (n={valid_robust_count})")
+
+    # Check for overfitting
+    r2_diff = train_r2 - valid_r2
+    rmse_ratio = valid_rmse / train_rmse
+
+    if r2_diff > 0.1:
+        print(f"      ⚠️  Potential overfitting: R² gap = {r2_diff:.3f}")
+    if rmse_ratio > 1.3:
+        print(f"      ⚠️  Potential overfitting: RMSE ratio = {rmse_ratio:.2f}")
+
+    return {
+        'model': model,
+        'train_rmse': train_rmse, 'valid_rmse': valid_rmse,
+        'train_r2': train_r2, 'valid_r2': valid_r2,
+        'train_mae': train_mae, 'valid_mae': valid_mae,
+        'train_mape': train_mape, 'valid_mape': valid_mape,
+        'train_mape_robust': train_mape_robust, 'valid_mape_robust': valid_mape_robust,
+        'y_pred_valid_orig': y_pred_valid_orig,
+        'y_pred_train_orig': y_pred_train_orig
+    }
+
+# Train all final models
+final_results = {}
+for model_name, model in models.items():
+    final_results[model_name] = train_and_evaluate_final_boxcox(
+        model, X_train_scaled, y_train_boxcox, y_train,
+        X_valid_scaled, y_valid_boxcox, y_valid, model_name,
+        optimal_lambda, constant_added
+    )
+
+print(f"\n✅ Final Box-Cox model training completed!")
+
+# %%
+# SECTION 14: MODEL COMPARISON AND SELECTION
+# =============================================================================
+print("\n🏆 BOX-COX MODEL COMPARISON AND SELECTION")
+print("-" * 70)
+
+# Create comprehensive comparison DataFrame
+comparison_data = []
+for model_name in models.keys():
+    cv_res = cv_results[model_name]
+    final_res = final_results[model_name]
+
+    comparison_data.append({
+        'Model': model_name,
+        'CV_R2_Mean': cv_res['cv_r2_mean'],
+        'CV_R2_Std': cv_res['cv_r2_std'],
+        'CV_RMSE_Mean': cv_res['cv_rmse_mean'],
+        'CV_RMSE_Std': cv_res['cv_rmse_std'],
+        'Valid_R2': final_res['valid_r2'],
+        'Valid_RMSE': final_res['valid_rmse'],
+        'Valid_MAE': final_res['valid_mae'],
+        'Valid_MAPE_Robust': final_res['valid_mape_robust'],
+        'Overfitting_Score': final_res['train_r2'] - final_res['valid_r2']
+    })
+
+comparison_df = pd.DataFrame(comparison_data)
+comparison_df = comparison_df.sort_values('Valid_R2', ascending=False)
+
+print("\n📊 COMPREHENSIVE BOX-COX MODEL PERFORMANCE COMPARISON:")
+print("=" * 120)
+print(comparison_df.round(4).to_string(index=False))
+
+# Select best model based on validation R²
+best_model_name = comparison_df.iloc[0]['Model']
+best_model_results = final_results[best_model_name]
+
+print(f"\n🥇 BEST BOX-COX MODEL SELECTED: {best_model_name}")
+print("-" * 60)
+print(f"   📈 Validation R²: {best_model_results['valid_r2']:.4f}")
+print(f"   📈 Validation RMSE: ${best_model_results['valid_rmse']:,.0f}")
+print(f"   📈 Validation MAE: ${best_model_results['valid_mae']:,.0f}")
+print(f"   📈 Validation Robust MAPE: {best_model_results['valid_mape_robust']:.1f}%")
+print(f"   🔧 Box-Cox λ: {optimal_lambda:.4f} ({transform_params['interpretation']})")
+
+# %%
+# SECTION 15: FINAL TEST EVALUATION WITH BOX-COX
+# =============================================================================
+print("\n🎯 FINAL BOX-COX TEST EVALUATION")
+print("-" * 70)
+
+def evaluate_test_set_boxcox(model, X_test, y_test_boxcox, y_test_orig, model_name, lambda_val, constant_added=0):
+    """
+    Comprehensive test set evaluation with Box-Cox transformation
+    """
+    print(f"\n🔍 Evaluating {model_name} on test set (λ={lambda_val:.4f})...")
+
+    # Make predictions in Box-Cox scale
+    y_pred_test_boxcox = model.predict(X_test)
+
+    # CRITICAL: Inverse transform to original scale
+    y_pred_test_orig = inverse_boxcox_transform(y_pred_test_boxcox, lambda_val, constant_added)
+
+    # Calculate comprehensive metrics on original scale
+    test_rmse = np.sqrt(mean_squared_error(y_test_orig, y_pred_test_orig))
+    test_r2 = r2_score(y_test_orig, y_pred_test_orig)
+    test_mae = mean_absolute_error(y_test_orig, y_pred_test_orig)
+
+    # Calculate robust MAPE
+    def calculate_robust_mape_test(y_true, y_pred, threshold=1000):
+        mask = y_true >= threshold
+        if mask.sum() == 0:
+            return np.nan, 0
+        mape = np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100
+        return mape, mask.sum()
+
+    test_mape = np.mean(np.abs((y_test_orig - y_pred_test_orig) / y_test_orig)) * 100
+    test_mape_robust, test_robust_count = calculate_robust_mape_test(y_test_orig, y_pred_test_orig)
+
+    # Calculate additional metrics
+    from sklearn.metrics import explained_variance_score
+    test_evs = explained_variance_score(y_test_orig, y_pred_test_orig)
+
+    # Calculate residuals
+    residuals = y_test_orig - y_pred_test_orig
+    residuals_pct = (residuals / y_test_orig) * 100
+
+    print(f"\n🏆 FINAL BOX-COX TEST PERFORMANCE ({model_name}):")
+    print("=" * 70)
+    print(f"   📊 R² Score: {test_r2:.4f}")
+    print(f"   📊 RMSE: ${test_rmse:,.0f}")
+    print(f"   📊 MAE: ${test_mae:,.0f}")
+    print(f"   📊 Standard MAPE: {test_mape:.1f}% (⚠️ Inflated by low incomes)")
+    print(f"   📊 Robust MAPE (≥$1K): {test_mape_robust:.1f}% (n={test_robust_count}) ✅")
+    print(f"   📊 Explained Variance: {test_evs:.4f}")
+    print(f"   🔧 Box-Cox λ: {lambda_val:.4f}")
+
+    # Residual analysis
+    print(f"\n📈 RESIDUAL ANALYSIS:")
+    print(f"   Mean residual: ${residuals.mean():,.0f}")
+    print(f"   Std residual: ${residuals.std():,.0f}")
+    print(f"   Mean absolute residual %: {np.abs(residuals_pct).mean():.1f}%")
+
+    # Performance by income ranges
+    print(f"\n📊 PERFORMANCE BY INCOME RANGES:")
+    income_ranges = [
+        (0, 1000, "Low Income"),
+        (1000, 2000, "Medium-Low Income"),
+        (2000, 3000, "Medium Income"),
+        (3000, float('inf'), "High Income")
+    ]
+
+    for min_income, max_income, range_name in income_ranges:
+        mask = (y_test_orig >= min_income) & (y_test_orig < max_income)
+        if mask.sum() > 0:
+            range_r2 = r2_score(y_test_orig[mask], y_pred_test_orig[mask])
+            range_mae = mean_absolute_error(y_test_orig[mask], y_pred_test_orig[mask])
+            range_count = mask.sum()
+            print(f"   {range_name:18s}: R²={range_r2:6.3f}, MAE=${range_mae:8,.0f}, n={range_count:4d}")
+
+    return {
+        'test_r2': test_r2,
+        'test_rmse': test_rmse,
+        'test_mae': test_mae,
+        'test_mape': test_mape,
+        'test_mape_robust': test_mape_robust,
+        'test_evs': test_evs,
+        'y_pred_test_orig': y_pred_test_orig,
+        'residuals': residuals,
+        'residuals_pct': residuals_pct
+    }
+
+# Evaluate best model on test set
+best_model = best_model_results['model']
+test_results = evaluate_test_set_boxcox(
+    best_model, X_test_scaled, y_test_boxcox, y_test, best_model_name, optimal_lambda, constant_added
+)
+
+print(f"\n✅ Box-Cox test evaluation completed!")
+
+# %%
+# SECTION 16: BOX-COX VS LOG TRANSFORMATION PERFORMANCE COMPARISON
+# =============================================================================
+print("\n🔬 BOX-COX VS LOG TRANSFORMATION PERFORMANCE COMPARISON")
+print("-" * 80)
+
+def compare_boxcox_vs_log_performance():
+    """
+    Compare Box-Cox vs Log transformation performance
+
+    This comparison helps determine which transformation method
+    provides better model performance for your specific dataset.
+    """
+
+    print("📊 TRANSFORMATION METHOD COMPARISON:")
+    print("=" * 60)
+
+    # Box-Cox results (current)
+    boxcox_r2 = test_results['test_r2']
+    boxcox_rmse = test_results['test_rmse']
+    boxcox_mae = test_results['test_mae']
+    boxcox_mape_robust = test_results['test_mape_robust']
+
+    print(f"BOX-COX TRANSFORMATION (λ = {optimal_lambda:.4f}):")
+    print(f"   📈 Test R²: {boxcox_r2:.4f}")
+    print(f"   📈 Test RMSE: ${boxcox_rmse:,.0f}")
+    print(f"   📈 Test MAE: ${boxcox_mae:,.0f}")
+    print(f"   📈 Robust MAPE: {boxcox_mape_robust:.1f}%")
+    print(f"   🔧 Interpretation: {transform_params['interpretation']}")
+
+    # Note about log comparison
+    print(f"\nLOG TRANSFORMATION COMPARISON:")
+    print(f"   💡 To compare with log transformation results:")
+    print(f"   📁 Run: model_process_with_log_transform.txt")
+    print(f"   📊 Expected log performance: R² ≈ 0.38-0.42")
+    print(f"   🎯 Box-Cox should show improvement if λ ≠ 0")
+
+    # Performance interpretation
+    print(f"\n🎯 PERFORMANCE INTERPRETATION:")
+    print("-" * 35)
+
+    if boxcox_r2 > 0.45:
+        performance_level = "Excellent"
+        recommendation = "Deploy this model"
+    elif boxcox_r2 > 0.40:
+        performance_level = "Very Good"
+        recommendation = "Strong candidate for deployment"
+    elif boxcox_r2 > 0.35:
+        performance_level = "Good"
+        recommendation = "Consider further optimization"
+    else:
+        performance_level = "Needs Improvement"
+        recommendation = "Explore additional features or methods"
+
+    print(f"   📊 Performance Level: {performance_level}")
+    print(f"   💡 Recommendation: {recommendation}")
+
+    # Lambda interpretation and insights
+    print(f"\n🔍 BOX-COX LAMBDA INSIGHTS:")
+    print("-" * 30)
+
+    if abs(optimal_lambda) < 0.01:
+        lambda_insight = "Very close to log transformation - log was nearly optimal"
+    elif 0.4 < optimal_lambda < 0.6:
+        lambda_insight = "Square root-like transformation - moderate power reduction"
+    elif optimal_lambda > 0.8:
+        lambda_insight = "Minimal transformation needed - data was relatively normal"
+    elif optimal_lambda < -0.5:
+        lambda_insight = "Strong inverse transformation - highly skewed data"
+    else:
+        lambda_insight = "Custom power transformation - unique data characteristics"
+
+    print(f"   🔧 λ = {optimal_lambda:.4f}: {lambda_insight}")
+
+    # Business impact
+    avg_income = y_test.mean()
+    error_percentage = (boxcox_mae / avg_income) * 100
+
+    print(f"\n💼 BUSINESS IMPACT ANALYSIS:")
+    print("-" * 30)
+    print(f"   💰 Average Income: ${avg_income:,.2f}")
+    print(f"   📊 Average Error: ${boxcox_mae:,.2f}")
+    print(f"   📈 Relative Error: {error_percentage:.1f}%")
+
+    if error_percentage < 20:
+        business_assessment = "Excellent for business use"
+    elif error_percentage < 30:
+        business_assessment = "Good for business decisions"
+    elif error_percentage < 40:
+        business_assessment = "Acceptable with caution"
+    else:
+        business_assessment = "Needs improvement for business use"
+
+    print(f"   🎯 Assessment: {business_assessment}")
+
+    return {
+        'boxcox_performance': performance_level,
+        'lambda_insight': lambda_insight,
+        'business_assessment': business_assessment,
+        'error_percentage': error_percentage
+    }
+
+# Perform comparison analysis
+comparison_analysis = compare_boxcox_vs_log_performance()
+
+# %%
+# SECTION 17: SAVE BOX-COX MODEL ARTIFACTS
+# =============================================================================
+print("\n💾 SAVING BOX-COX MODEL ARTIFACTS")
+print("-" * 70)
+
+import joblib
+import json
+
+def save_boxcox_model_artifacts(best_model, scaler, feature_columns, model_name,
+                               test_results, comparison_df, transform_params, optimal_lambda):
+    """
+    Save all Box-Cox model artifacts for production deployment
+
+    CRITICAL COMPONENTS TO SAVE:
+    ============================
+    1. Trained model (already trained on Box-Cox scale)
+    2. Feature scaler
+    3. Feature column names
+    4. Box-Cox transformation parameters (λ, constant)
+    5. Inverse transformation function
+    6. Performance metrics
+
+    PRODUCTION DEPLOYMENT NOTES:
+    ===========================
+    - Model predicts in BOX-COX scale
+    - MUST apply inverse_boxcox_transform to get original scale
+    - Use saved scaler for feature preprocessing
+    - Feature columns must match exactly
+    - Lambda parameter is critical for inverse transformation
+    """
+
+    # Create comprehensive model artifacts
+    model_artifacts = {
+        'model': best_model,
+        'scaler': scaler,
+        'feature_columns': feature_columns,
+        'model_name': model_name,
+        'transformation_type': 'boxcox',
+        'transformation_params': {
+            'lambda': optimal_lambda,
+            'constant_added': transform_params['constant_added'],
+            'interpretation': transform_params['interpretation']
+        },
+        'inverse_transform_function': 'inverse_boxcox_transform',
+        'test_performance': {
+            'r2': test_results['test_r2'],
+            'rmse': test_results['test_rmse'],
+            'mae': test_results['test_mae'],
+            'mape_robust': test_results['test_mape_robust'],
+            'explained_variance': test_results['test_evs']
+        },
+        'training_info': {
+            'target_transformation': f'Box-Cox with λ = {optimal_lambda:.4f}',
+            'feature_scaling': 'RobustScaler',
+            'cv_strategy': 'KFold with 4 splits',
+            'evaluation_scale': 'original (inverse transformed)'
+        },
+        'deployment_instructions': {
+            'step_1': 'Apply scaler.transform() to features',
+            'step_2': 'Use model.predict() to get Box-Cox scale predictions',
+            'step_3': f'Apply inverse_boxcox_transform(pred, λ={optimal_lambda:.4f}) to convert to original scale',
+            'step_4': 'Result is income in original dollars'
+        }
+    }
+
+    # Save main model artifacts
+    model_filename = f'{data_path}/income_prediction_model_boxcox_transform.pkl'
+    joblib.dump(model_artifacts, model_filename)
+    print(f"   ✅ Box-Cox model artifacts saved: {model_filename}")
+
+    # Save performance comparison
+    comparison_filename = f'{data_path}/model_comparison_boxcox_transform.csv'
+    comparison_df.to_csv(comparison_filename, index=False)
+    print(f"   ✅ Model comparison saved: {comparison_filename}")
+
+    # Save detailed results
+    results_summary = {
+        'final_performance': {
+            'best_model': model_name,
+            'test_r2': float(test_results['test_r2']),
+            'test_rmse': float(test_results['test_rmse']),
+            'test_mae': float(test_results['test_mae']),
+            'test_mape_robust': float(test_results['test_mape_robust'])
+        },
+        'transformation_details': {
+            'optimal_lambda': float(optimal_lambda),
+            'interpretation': transform_params['interpretation'],
+            'skewness_improvement': float(transform_params['skew_improvement']),
+            'kurtosis_improvement': float(transform_params['kurtosis_improvement'])
+        },
+        'model_configuration': {
+            'features_count': len(feature_columns),
+            'training_samples': len(y_train),
+            'test_samples': len(y_test),
+            'zero_handling_strategy': BOXCOX_STRATEGY
+        }
+    }
+
+    results_filename = f'{data_path}/boxcox_transform_results_summary.json'
+    with open(results_filename, 'w') as f:
+        json.dump(results_summary, f, indent=2)
+    print(f"   ✅ Results summary saved: {results_filename}")
+
+    return model_artifacts
+
+# Save all artifacts
+saved_artifacts = save_boxcox_model_artifacts(
+    best_model, scaler, feature_columns, best_model_name,
+    test_results, comparison_df, transform_params, optimal_lambda
+)
+
+# %%
+# SECTION 18: PRODUCTION DEPLOYMENT TEMPLATE FOR BOX-COX
+# =============================================================================
+print("\n🚀 BOX-COX PRODUCTION DEPLOYMENT TEMPLATE")
+print("-" * 70)
+
+def create_boxcox_production_template():
+    """
+    Create a template for production deployment with Box-Cox transformation
+    """
+
+    template_code = f'''
+# ===============================================================================
+# PRODUCTION INCOME PREDICTION WITH BOX-COX TRANSFORMATION
+# ===============================================================================
+# This template shows how to use the trained Box-Cox model for new predictions
+
+import joblib
+import numpy as np
+import pandas as pd
+
+# Load model artifacts
+model_artifacts = joblib.load('income_prediction_model_boxcox_transform.pkl')
+model = model_artifacts['model']
+scaler = model_artifacts['scaler']
+feature_columns = model_artifacts['feature_columns']
+lambda_val = model_artifacts['transformation_params']['lambda']
+constant_added = model_artifacts['transformation_params']['constant_added']
+
+def inverse_boxcox_transform(y_boxcox_pred, lambda_val, constant_added=0):
+    """Convert Box-Cox predictions back to original scale"""
+    if lambda_val == 0:
+        y_pred_original = np.exp(y_boxcox_pred)
+    else:
+        y_pred_original = np.power(lambda_val * y_boxcox_pred + 1, 1/lambda_val)
+
+    if constant_added > 0:
+        y_pred_original = y_pred_original - constant_added
+        y_pred_original = np.maximum(y_pred_original, 0)
+
+    return y_pred_original
+
+def predict_income_boxcox(new_data_df):
+    """
+    Predict income for new customers using Box-Cox transformation
+
+    Parameters:
+    -----------
+    new_data_df : DataFrame
+        New customer data with same features as training
+
+    Returns:
+    --------
+    array : Predicted incomes in original scale (dollars)
+    """
+
+    # Step 1: Select and order features correctly
+    X_new = new_data_df[feature_columns].copy()
+
+    # Step 2: Apply feature scaling
+    X_new_scaled = scaler.transform(X_new)
+
+    # Step 3: Make predictions (in Box-Cox scale)
+    y_pred_boxcox = model.predict(X_new_scaled)
+
+    # Step 4: CRITICAL - Convert back to original scale
+    y_pred_original = inverse_boxcox_transform(y_pred_boxcox, lambda_val, constant_added)
+
+    return y_pred_original
+
+# Example usage:
+# new_customers = pd.DataFrame({{...}})  # Your new customer data
+# predicted_incomes = predict_income_boxcox(new_customers)
+# print(f"Predicted incomes: {{predicted_incomes}}")
+
+# ===============================================================================
+# IMPORTANT NOTES FOR PRODUCTION:
+# ===============================================================================
+# 1. Feature columns must match exactly: {feature_columns}
+# 2. Model predicts in BOX-COX scale - MUST use inverse_boxcox_transform
+# 3. Box-Cox λ parameter: {optimal_lambda:.4f} ({transform_params['interpretation']})
+# 4. Apply same preprocessing as training data
+# 5. Expected performance: R² ≈ {test_results["test_r2"]:.3f}, MAE ≈ ${test_results["test_mae"]:,.0f}
+# 6. Robust MAPE: ≈ {test_results["test_mape_robust"]:.1f}% (for incomes ≥ $1,000)
+# ===============================================================================
+'''
+
+    # Save template
+    template_filename = f'{data_path}/production_deployment_boxcox_template.py'
+    with open(template_filename, 'w') as f:
+        f.write(template_code)
+
+    print(f"   ✅ Box-Cox production template saved: {template_filename}")
+
+    return template_code
+
+# Create production template
+production_template = create_boxcox_production_template()
+
+# %%
+# SECTION 19: FINAL SUMMARY AND RECOMMENDATIONS
+# =============================================================================
+print("\n🎉 BOX-COX TRANSFORMATION PIPELINE COMPLETE!")
+print("=" * 90)
+
+def print_boxcox_final_summary():
+    """
+    Print comprehensive final summary for Box-Cox transformation
+    """
+
+    print(f"\n📊 FINAL BOX-COX PERFORMANCE SUMMARY:")
+    print("-" * 50)
+    print(f"   🥇 Best Model: {best_model_name}")
+    print(f"   📈 Test R² Score: {test_results['test_r2']:.4f}")
+    print(f"   📈 Test RMSE: ${test_results['test_rmse']:,.0f}")
+    print(f"   📈 Test MAE: ${test_results['test_mae']:,.0f}")
+    print(f"   📈 Robust MAPE: {test_results['test_mape_robust']:.1f}%")
+    print(f"   🔧 Optimal λ: {optimal_lambda:.4f} ({transform_params['interpretation']})")
+
+    print(f"\n🔄 BOX-COX TRANSFORMATION BENEFITS:")
+    print("-" * 45)
+    print(f"   ✅ Optimal λ Selection: Data-driven approach")
+    print(f"   ✅ Skewness Improvement: {transform_params['skew_improvement']:.3f}")
+    print(f"   ✅ Kurtosis Improvement: {transform_params['kurtosis_improvement']:.3f}")
+    print(f"   ✅ Better Normality: Automatic optimization")
+    print(f"   ✅ Flexible Transformation: Beyond log limitations")
+
+    print(f"\n💾 SAVED BOX-COX ARTIFACTS:")
+    print("-" * 30)
+    print(f"   📁 Model: income_prediction_model_boxcox_transform.pkl")
+    print(f"   📁 Comparison: model_comparison_boxcox_transform.csv")
+    print(f"   📁 Summary: boxcox_transform_results_summary.json")
+    print(f"   📁 Template: production_deployment_boxcox_template.py")
+
+    print(f"\n🔬 TRANSFORMATION COMPARISON RECOMMENDATIONS:")
+    print("-" * 55)
+    print(f"   1. 📊 Compare Box-Cox vs Log Performance:")
+    print(f"      - Run both transformation pipelines")
+    print(f"      - Compare R², RMSE, MAE metrics")
+    print(f"      - Choose best performing method")
+    print(f"   2. 🎯 Expected Box-Cox Advantages:")
+    print(f"      - Better normality (λ = {optimal_lambda:.4f})")
+    print(f"      - Potentially higher R² than log")
+    print(f"      - More stable residuals")
+    print(f"   3. 💡 Decision Criteria:")
+    print(f"      - If λ ≈ 0: Log transformation sufficient")
+    print(f"      - If λ ≠ 0: Box-Cox provides improvement")
+    print(f"      - Use validation metrics to decide")
+
+    print(f"\n🎯 NEXT STEPS FOR OPTIMIZATION:")
+    print("-" * 35)
+    print(f"   1. 🔧 Hyperparameter Tuning:")
+    print(f"      - Optimize for Box-Cox scale")
+    print(f"      - Target R² > 0.45")
+    print(f"   2. 🤝 Ensemble Methods:")
+    print(f"      - Combine Box-Cox + Log models")
+    print(f"      - Weighted averaging")
+    print(f"   3. 🔍 Advanced Features:")
+    print(f"      - Box-Cox on features too")
+    print(f"      - Interaction terms")
+    print(f"   4. 📊 Model Validation:")
+    print(f"      - A/B test vs current system")
+    print(f"      - Monitor performance over time")
+
+    print(f"\n⚠️  CRITICAL PRODUCTION REMINDERS:")
+    print("-" * 45)
+    print(f"   🔴 ALWAYS use inverse_boxcox_transform for predictions")
+    print(f"   🔴 Lambda parameter is critical: λ = {optimal_lambda:.4f}")
+    print(f"   🔴 Apply same feature scaling as training")
+    print(f"   🔴 Handle constant addition if used: +${transform_params['constant_added']}")
+    print(f"   🔴 Monitor prediction quality over time")
+
+    print(f"\n✅ BOX-COX TRANSFORMATION PIPELINE SUCCESSFULLY COMPLETED!")
+    print("=" * 90)
+
+# Print final summary
+print_boxcox_final_summary()
+
+# ===============================================================================
+# END OF BOX-COX TRANSFORMATION PIPELINE
+# ===============================================================================

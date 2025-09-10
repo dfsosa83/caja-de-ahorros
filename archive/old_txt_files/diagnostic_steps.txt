@@ -1,0 +1,482 @@
+# %%
+# =============================================================================
+# DIAGNOSTIC STEPS FOR MODEL PERFORMANCE ISSUES
+# =============================================================================
+print("\n🔍 COMPREHENSIVE MODEL DIAGNOSTICS")
+print("=" * 60)
+
+# =============================================================================
+# STEP 1: BASIC DATA VALIDATION
+# =============================================================================
+print("\n📊 STEP 1: Basic Data Validation")
+print("-" * 40)
+
+# Check if we're using the right dataset
+print(f"🔍 Dataset being used: {type(df_original).__name__}")
+print(f"📏 Original dataset shape: {df_original.shape}")
+
+# Check if target variable exists and has reasonable values
+if 'ingresos_reportados' in df_original.columns:
+    target_stats = df_original['ingresos_reportados'].describe()
+    print(f"\n💰 Target variable (ingresos_reportados) statistics:")
+    print(f"   Count: {target_stats['count']:,.0f}")
+    print(f"   Mean: ${target_stats['mean']:,.2f}")
+    print(f"   Median: ${target_stats['50%']:,.2f}")
+    print(f"   Min: ${target_stats['min']:,.2f}")
+    print(f"   Max: ${target_stats['max']:,.2f}")
+    print(f"   Std: ${target_stats['std']:,.2f}")
+    
+    # Check for missing values in target
+    missing_target = df_original['ingresos_reportados'].isnull().sum()
+    print(f"   Missing values: {missing_target:,} ({missing_target/len(df_original)*100:.1f}%)")
+else:
+    print("❌ ERROR: Target variable 'ingresos_reportados' not found!")
+
+# =============================================================================
+# STEP 2: FEATURE SELECTION VALIDATION
+# =============================================================================
+print(f"\n🎯 STEP 2: Feature Selection Validation")
+print("-" * 40)
+
+print(f"📈 Selected features count: {len(selected_features_final)}")
+print(f"🎲 Noise features count: {len(noise_features)}")
+
+# Check if critical features are included
+critical_features = ['edad', 'saldo', 'monto_letra', 'ocupacion_consolidated_freq', 
+                    'ciudad_consolidated_freq', 'letras_mensuales']
+
+print(f"\n🔑 Critical features check:")
+missing_critical = []
+for feature in critical_features:
+    if feature in selected_features_final:
+        print(f"   ✅ {feature}: INCLUDED")
+    else:
+        print(f"   ❌ {feature}: MISSING")
+        missing_critical.append(feature)
+
+if missing_critical:
+    print(f"\n⚠️  WARNING: {len(missing_critical)} critical features are missing!")
+    print("   This could explain the poor performance.")
+
+# Show top 10 selected features
+print(f"\n📋 Top 10 selected features:")
+for i, feature in enumerate(selected_features_final[:10], 1):
+    print(f"   {i:2d}. {feature}")
+
+# =============================================================================
+# STEP 3: DATA PIPELINE VALIDATION
+# =============================================================================
+print(f"\n🔧 STEP 3: Data Pipeline Validation")
+print("-" * 40)
+
+# Check final dataset shapes
+print(f"📊 Final dataset shapes:")
+print(f"   X_train_final: {X_train_final.shape if 'X_train_final' in locals() else 'NOT CREATED'}")
+print(f"   X_valid_final: {X_valid_final.shape if 'X_valid_final' in locals() else 'NOT CREATED'}")
+print(f"   X_test_final: {X_test_final.shape if 'X_test_final' in locals() else 'NOT CREATED'}")
+
+# Check for NaN values
+if 'X_train_final' in locals():
+    nan_count = X_train_final.isnull().sum().sum()
+    print(f"   NaN values in X_train_final: {nan_count}")
+    
+    if nan_count > 0:
+        print("   ❌ WARNING: NaN values detected in training data!")
+        nan_features = X_train_final.isnull().sum()
+        nan_features = nan_features[nan_features > 0]
+        print(f"   Features with NaN: {list(nan_features.index)}")
+
+# Check target variable after cleaning
+if 'y_train_cleaned' in locals():
+    print(f"\n💰 Cleaned target statistics:")
+    print(f"   y_train_cleaned shape: {y_train_cleaned.shape}")
+    print(f"   Mean: ${y_train_cleaned.mean():,.2f}")
+    print(f"   Min: ${y_train_cleaned.min():,.2f}")
+    print(f"   Max: ${y_train_cleaned.max():,.2f}")
+    
+    # Check if winsorization was too aggressive
+    if 'train_df_enhanced' in locals() and 'ingresos_reportados' in train_df_enhanced.columns:
+        original_target = train_df_enhanced['ingresos_reportados']
+        winsorized_count = (original_target != y_train_cleaned).sum()
+        print(f"   Winsorized values: {winsorized_count} ({winsorized_count/len(y_train_cleaned)*100:.1f}%)")
+
+# =============================================================================
+# STEP 4: MODEL VALIDATION
+# =============================================================================
+print(f"\n🤖 STEP 4: Model Validation")
+print("-" * 40)
+
+# Check if models were trained properly
+if 'best_model' in locals():
+    print(f"✅ Best model available: {type(best_model).__name__}")
+    print(f"✅ Best model name: {best_model_name if 'best_model_name' in locals() else 'Unknown'}")
+else:
+    print("❌ ERROR: No best_model found!")
+
+# Check prediction range
+if 'test_predictions' in locals():
+    print(f"\n📈 Prediction statistics:")
+    print(f"   Shape: {test_predictions.shape}")
+    print(f"   Mean: ${test_predictions.mean():,.2f}")
+    print(f"   Min: ${test_predictions.min():,.2f}")
+    print(f"   Max: ${test_predictions.max():,.2f}")
+    print(f"   Std: ${test_predictions.std():,.2f}")
+    
+    # Check for unrealistic predictions
+    if test_predictions.min() < 0:
+        print("   ❌ WARNING: Negative predictions detected!")
+    if test_predictions.max() > 50000:
+        print("   ⚠️  WARNING: Very high predictions detected!")
+else:
+    print("❌ ERROR: No test_predictions found!")
+
+# =============================================================================
+# STEP 5: QUICK PERFORMANCE CHECK WITH BASELINE
+# =============================================================================
+print(f"\n⚡ STEP 5: Quick Baseline Performance Check")
+print("-" * 40)
+
+# Try a simple baseline model with core features only
+try:
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.metrics import r2_score, mean_squared_error
+    
+    # Define minimal core features that should always work
+    core_features = []
+    potential_core = ['edad', 'saldo', 'monto_letra', 'letras_mensuales']
+    
+    for feature in potential_core:
+        if feature in X_train_final.columns:
+            core_features.append(feature)
+    
+    if len(core_features) >= 3:
+        print(f"🔧 Testing baseline with {len(core_features)} core features: {core_features}")
+        
+        # Simple baseline model
+        baseline_model = RandomForestRegressor(n_estimators=50, random_state=42)
+        baseline_model.fit(X_train_final[core_features], y_train_cleaned)
+        
+        # Quick prediction
+        baseline_pred = baseline_model.predict(X_test_final[core_features])
+        baseline_r2 = r2_score(y_test_cleaned, baseline_pred)
+        baseline_rmse = np.sqrt(mean_squared_error(y_test_cleaned, baseline_pred))
+        
+        print(f"   📊 Baseline R²: {baseline_r2:.4f}")
+        print(f"   📊 Baseline RMSE: {baseline_rmse:.2f}")
+        
+        if baseline_r2 > 0.2:
+            print("   ✅ Baseline performs reasonably - issue is likely in feature selection")
+        else:
+            print("   ❌ Even baseline performs poorly - issue is in data pipeline")
+    else:
+        print("   ❌ Cannot create baseline - core features missing")
+        
+except Exception as e:
+    print(f"   ❌ Baseline test failed: {str(e)}")
+
+# =============================================================================
+# STEP 6: RECOMMENDATIONS BASED ON FINDINGS
+# =============================================================================
+print(f"\n💡 STEP 6: Diagnostic Recommendations")
+print("-" * 40)
+
+recommendations = []
+
+# Check feature count
+if len(selected_features_final) < 10:
+    recommendations.append("🔧 CRITICAL: Too few features selected - relax noise filtering")
+
+# Check for missing critical features
+if missing_critical:
+    recommendations.append("🔧 CRITICAL: Add missing critical features manually")
+
+# Check for data issues
+if 'X_train_final' in locals() and X_train_final.isnull().sum().sum() > 0:
+    recommendations.append("🔧 HIGH: Fix NaN values in training data")
+
+# Check target variable
+if 'y_train_cleaned' in locals():
+    if y_train_cleaned.std() < 100:
+        recommendations.append("🔧 HIGH: Target variable may be over-winsorized")
+
+# Check predictions
+if 'test_predictions' in locals():
+    if test_predictions.std() < 100:
+        recommendations.append("🔧 HIGH: Predictions have very low variance - model not learning")
+
+print("🎯 IMMEDIATE ACTION ITEMS:")
+for i, rec in enumerate(recommendations, 1):
+    print(f"   {i}. {rec}")
+
+if not recommendations:
+    print("   ✅ No critical issues detected in basic diagnostics")
+    print("   🔍 Issue may be in model hyperparameters or feature interactions")
+
+print(f"\n✅ Diagnostic complete! Check the recommendations above.")
+
+# =============================================================================
+# STEP 7: EMERGENCY FIXES TO TRY
+# =============================================================================
+print(f"\n🚨 STEP 7: Emergency Fixes to Try")
+print("-" * 40)
+
+print("🔧 FIX 1: Force include critical features")
+print("# Add this code to force include critical features:")
+print("""
+# Force include critical features regardless of noise filtering
+critical_features_to_add = ['edad', 'saldo', 'monto_letra', 'letras_mensuales',
+                           'ocupacion_consolidated_freq', 'ciudad_consolidated_freq']
+
+for feature in critical_features_to_add:
+    if feature in train_df_enhanced.columns and feature not in selected_features_final:
+        selected_features_final.append(feature)
+        print(f"   ✅ Force added: {feature}")
+
+print(f"Updated feature count: {len(selected_features_final)}")
+""")
+
+print("\n🔧 FIX 2: Relax noise filtering thresholds")
+print("# Replace the noise filtering section with more lenient thresholds:")
+print("""
+# More lenient thresholds (use 50th percentile instead of 60th/70th)
+rf_threshold = np.percentile(importances1, 50)  # Top 50% of features
+lgbm_threshold = np.percentile(importances2, 50)  # Top 50% of features
+ridge_threshold = np.percentile(importances3, 50)  # Top 50% of features
+
+# Lower minimum strategy support to 1
+min_strategy_support = 1
+""")
+
+print("\n🔧 FIX 3: Ensure minimum feature count")
+print("# Add this after feature selection:")
+print("""
+# Ensure we have at least 20 features
+if len(selected_features_final) < 20:
+    print(f"⚠️ Only {len(selected_features_final)} features selected, adding more...")
+
+    # Get top features by importance
+    additional_features = real_features_df.head(30)['Feature'].tolist()
+    for feature in additional_features:
+        if feature not in selected_features_final and feature not in noise_features:
+            selected_features_final.append(feature)
+            if len(selected_features_final) >= 20:
+                break
+
+    print(f"✅ Updated to {len(selected_features_final)} features")
+""")
+
+print("\n🔧 FIX 4: Check for data leakage in scaling")
+print("# Make sure scaling is done correctly:")
+print("""
+# Fit scaler only on training data
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train_final)
+X_valid_scaled = scaler.transform(X_valid_final)  # Use transform, not fit_transform
+X_test_scaled = scaler.transform(X_test_final)    # Use transform, not fit_transform
+""")
+
+print("\n🔧 FIX 5: Verify target variable consistency")
+print("# Add this check before model training:")
+print("""
+# Verify target variables are consistent
+print(f"Target variable checks:")
+print(f"   y_train shape: {y_train_cleaned.shape}")
+print(f"   y_train mean: ${y_train_cleaned.mean():,.2f}")
+print(f"   y_train std: ${y_train_cleaned.std():,.2f}")
+print(f"   y_train range: ${y_train_cleaned.min():,.2f} to ${y_train_cleaned.max():,.2f}")
+
+# Check if target is too constrained
+if y_train_cleaned.std() < 200:
+    print("⚠️ WARNING: Target variable has very low variance!")
+    print("   Consider less aggressive winsorization")
+""")
+
+print("\n🎯 PRIORITY ORDER:")
+print("   1. Run the diagnostic first")
+print("   2. Apply FIX 1 (force critical features)")
+print("   3. Apply FIX 3 (ensure minimum features)")
+print("   4. If still poor, apply FIX 2 (relax thresholds)")
+print("   5. Check FIX 4 and FIX 5 for data issues")
+
+print("\n✅ Emergency fixes ready to apply!")
+
+
+
+
+
+
+-------------------------------------
+🔍 COMPREHENSIVE MODEL DIAGNOSTICS
+============================================================
+
+📊 STEP 1: Basic Data Validation
+----------------------------------------
+🔍 Dataset being used: DataFrame
+📏 Original dataset shape: (15000, 32)
+
+💰 Target variable (ingresos_reportados) statistics:
+   Count: 15,000
+   Mean: $135,767.41
+   Median: $1,300.00
+   Min: $500.00
+   Max: $999,999,999.00
+   Std: $11,546,884.21
+   Missing values: 0 (0.0%)
+
+🎯 STEP 2: Feature Selection Validation
+----------------------------------------
+📈 Selected features count: 50
+🎲 Noise features count: 8
+
+🔑 Critical features check:
+   ✅ edad: INCLUDED
+   ✅ saldo: INCLUDED
+   ✅ monto_letra: INCLUDED
+   ✅ ocupacion_consolidated_freq: INCLUDED
+   ❌ ciudad_consolidated_freq: MISSING
+   ❌ letras_mensuales: MISSING
+
+⚠️  WARNING: 2 critical features are missing!
+   This could explain the poor performance.
+
+📋 Top 10 selected features:
+    1. estado_civil_consolidated_Others_x_age_group_56-65
+    2. occupation_city_age_interaction
+    3. fecha_inicio_days
+    4. estado_civil_consolidated_Others_x_age_group_65+
+    5. payment_per_age
+    6. saldo
+    7. monto_letra
+    8. contract_duration
+    9. ocupacion_consolidated_freq
+   10. retired_x_age_group_46-55
+
+🔧 STEP 3: Data Pipeline Validation
+----------------------------------------
+📊 Final dataset shapes:
+   X_train_final: NOT CREATED
+   X_valid_final: NOT CREATED
+   X_test_final: (2250, 50)
+
+💰 Cleaned target statistics:
+   y_train_cleaned shape: (10500,)
+   Mean: $1,706.63
+   Min: $500.00
+   Max: $47,225.51
+   Winsorized values: 0 (0.0%)
+
+🤖 STEP 4: Model Validation
+----------------------------------------
+✅ Best model available: XGBRegressor
+✅ Best model name: XGBRegressor(base_score=None, booster=None, callbacks=None,
+             colsample_bylevel=None, colsample_bynode=None,
+             colsample_bytree=0.85, device=None, early_stopping_rounds=None,
+             enable_categorical=False, eval_metric=None, feature_types=None,
+             feature_weights=None, gamma=None, grow_policy=None,
+             importance_type=None, interaction_constraints=None,
+             learning_rate=0.05, max_bin=None, max_cat_threshold=None,
+             max_cat_to_onehot=None, max_delta_step=None, max_depth=6,
+             max_leaves=None, min_child_weight=5, missing=nan,
+             monotone_constraints=None, multi_strategy=None, n_estimators=300,
+             n_jobs=-1, num_parallel_tree=None, ...)
+
+📈 Prediction statistics:
+   Shape: (2250,)
+   Mean: $1,680.40
+   Min: $-110.62
+   Max: $23,789.01
+   Std: $1,077.81
+   ❌ WARNING: Negative predictions detected!
+
+⚡ STEP 5: Quick Baseline Performance Check
+----------------------------------------
+   ❌ Baseline test failed: name 'X_train_final' is not defined
+
+💡 STEP 6: Diagnostic Recommendations
+----------------------------------------
+🎯 IMMEDIATE ACTION ITEMS:
+   1. 🔧 CRITICAL: Add missing critical features manually
+
+✅ Diagnostic complete! Check the recommendations above.
+
+🚨 STEP 7: Emergency Fixes to Try
+----------------------------------------
+🔧 FIX 1: Force include critical features
+# Add this code to force include critical features:
+
+# Force include critical features regardless of noise filtering
+critical_features_to_add = ['edad', 'saldo', 'monto_letra', 'letras_mensuales',
+                           'ocupacion_consolidated_freq', 'ciudad_consolidated_freq']
+
+for feature in critical_features_to_add:
+    if feature in train_df_enhanced.columns and feature not in selected_features_final:
+        selected_features_final.append(feature)
+        print(f"   ✅ Force added: {feature}")
+
+print(f"Updated feature count: {len(selected_features_final)}")
+
+
+🔧 FIX 2: Relax noise filtering thresholds
+# Replace the noise filtering section with more lenient thresholds:
+
+# More lenient thresholds (use 50th percentile instead of 60th/70th)
+rf_threshold = np.percentile(importances1, 50)  # Top 50% of features
+lgbm_threshold = np.percentile(importances2, 50)  # Top 50% of features
+ridge_threshold = np.percentile(importances3, 50)  # Top 50% of features
+
+# Lower minimum strategy support to 1
+min_strategy_support = 1
+
+
+🔧 FIX 3: Ensure minimum feature count
+# Add this after feature selection:
+
+# Ensure we have at least 20 features
+if len(selected_features_final) < 20:
+    print(f"⚠️ Only {len(selected_features_final)} features selected, adding more...")
+
+    # Get top features by importance
+    additional_features = real_features_df.head(30)['Feature'].tolist()
+    for feature in additional_features:
+        if feature not in selected_features_final and feature not in noise_features:
+            selected_features_final.append(feature)
+            if len(selected_features_final) >= 20:
+                break
+
+    print(f"✅ Updated to {len(selected_features_final)} features")
+
+
+🔧 FIX 4: Check for data leakage in scaling
+# Make sure scaling is done correctly:
+
+# Fit scaler only on training data
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train_final)
+X_valid_scaled = scaler.transform(X_valid_final)  # Use transform, not fit_transform
+X_test_scaled = scaler.transform(X_test_final)    # Use transform, not fit_transform
+
+
+🔧 FIX 5: Verify target variable consistency
+# Add this check before model training:
+
+# Verify target variables are consistent
+print(f"Target variable checks:")
+print(f"   y_train shape: {y_train_cleaned.shape}")
+print(f"   y_train mean: ${y_train_cleaned.mean():,.2f}")
+print(f"   y_train std: ${y_train_cleaned.std():,.2f}")
+print(f"   y_train range: ${y_train_cleaned.min():,.2f} to ${y_train_cleaned.max():,.2f}")
+
+# Check if target is too constrained
+if y_train_cleaned.std() < 200:
+    print("⚠️ WARNING: Target variable has very low variance!")
+    print("   Consider less aggressive winsorization")
+
+
+🎯 PRIORITY ORDER:
+   1. Run the diagnostic first
+   2. Apply FIX 1 (force critical features)
+   3. Apply FIX 3 (ensure minimum features)
+   4. If still poor, apply FIX 2 (relax thresholds)
+   5. Check FIX 4 and FIX 5 for data issues
+
+✅ Emergency fixes ready to apply!

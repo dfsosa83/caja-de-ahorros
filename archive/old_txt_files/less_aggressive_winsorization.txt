@@ -1,0 +1,163 @@
+# %%
+# =============================================================================
+# LESS AGGRESSIVE WINSORIZATION - PRESERVE HIGH-INCOME EXAMPLES
+# =============================================================================
+print("\n🔧 IMPLEMENTING LESS AGGRESSIVE WINSORIZATION")
+print("-" * 60)
+
+def clean_target_outliers_conservative(df_list, target_col='ingresos_reportados'):
+    """
+    Conservative outlier cleaning that preserves high-income examples
+    """
+    # Get outlier parameters from training set only
+    train_target = df_list[0][target_col]
+    
+    print(f"📊 Original target distribution:")
+    print(f"   Mean: ${train_target.mean():,.2f}")
+    print(f"   Median: ${train_target.median():,.2f}")
+    print(f"   95th percentile: ${train_target.quantile(0.95):,.2f}")
+    print(f"   99th percentile: ${train_target.quantile(0.99):,.2f}")
+    print(f"   99.5th percentile: ${train_target.quantile(0.995):,.2f}")
+    print(f"   99.9th percentile: ${train_target.quantile(0.999):,.2f}")
+    print(f"   Max: ${train_target.max():,.2f}")
+    
+    # OPTION 1: VERY CONSERVATIVE (Recommended)
+    # Only remove extreme outliers that are likely data errors
+    lower_cap = train_target.quantile(0.001)  # 0.1st percentile (was 0.5th)
+    upper_cap = train_target.quantile(0.995)  # 99.5th percentile (was 99.9th)
+    
+    # OPTION 2: MODERATE CONSERVATIVE (Alternative)
+    # Uncomment these lines if Option 1 still has issues
+    # lower_cap = train_target.quantile(0.002)  # 0.2nd percentile
+    # upper_cap = train_target.quantile(0.99)   # 99th percentile
+    
+    # OPTION 3: MINIMAL WINSORIZATION (Last resort)
+    # Uncomment these lines if you want to preserve even more high earners
+    # lower_cap = 0  # Don't cap lower values at all
+    # upper_cap = train_target.quantile(0.998)  # 99.8th percentile
+    
+    print(f"\n🎯 Conservative winsorization bounds:")
+    print(f"   Lower cap: ${lower_cap:,.2f}")
+    print(f"   Upper cap: ${upper_cap:,.2f}")
+    print(f"   Preserving top {(1-0.995)*100:.1f}% of high earners (vs {(1-0.999)*100:.1f}% before)")
+
+    cleaned_dfs = []
+    set_names = ['Training', 'Validation', 'Test']
+
+    for i, (df, set_name) in enumerate(zip(df_list, set_names)):
+        df_clean = df.copy()
+        original_target = df_clean[target_col].copy()
+
+        # Apply conservative winsorization
+        df_clean[target_col] = original_target.clip(lower=lower_cap, upper=upper_cap)
+
+        # Count changes
+        n_capped = (original_target != df_clean[target_col]).sum()
+        n_upper_capped = (original_target > upper_cap).sum()
+        n_lower_capped = (original_target < lower_cap).sum()
+        
+        print(f"\n   ✅ {set_name} set:")
+        print(f"      Total capped: {n_capped:,} ({n_capped/len(df)*100:.1f}%)")
+        print(f"      Upper capped: {n_upper_capped:,} ({n_upper_capped/len(df)*100:.1f}%)")
+        print(f"      Lower capped: {n_lower_capped:,} ({n_lower_capped/len(df)*100:.1f}%)")
+
+        # Add outlier flags
+        df_clean['was_winsorized'] = (original_target != df_clean[target_col]).astype(int)
+        df_clean['was_upper_capped'] = (original_target > upper_cap).astype(int)
+        df_clean['was_lower_capped'] = (original_target < lower_cap).astype(int)
+
+        cleaned_dfs.append(df_clean)
+
+    return cleaned_dfs
+
+# =============================================================================
+# ALTERNATIVE: SMART WINSORIZATION BASED ON DATA ANALYSIS
+# =============================================================================
+print(f"\n🧠 ALTERNATIVE: Smart Winsorization")
+print("-" * 40)
+
+def smart_winsorization(df_list, target_col='ingresos_reportados'):
+    """
+    Smart winsorization that analyzes the data to find natural breakpoints
+    """
+    train_target = df_list[0][target_col]
+    
+    # Analyze the distribution
+    q95 = train_target.quantile(0.95)
+    q99 = train_target.quantile(0.99)
+    q999 = train_target.quantile(0.999)
+    max_val = train_target.max()
+    
+    print(f"📈 Distribution analysis:")
+    print(f"   95th percentile: ${q95:,.2f}")
+    print(f"   99th percentile: ${q99:,.2f}")
+    print(f"   99.9th percentile: ${q999:,.2f}")
+    print(f"   Maximum: ${max_val:,.2f}")
+    
+    # Smart upper cap logic
+    if max_val > q999 * 3:  # If max is 3x the 99.9th percentile
+        upper_cap = q999  # Cap at 99.9th percentile
+        print(f"   🎯 Using 99.9th percentile cap (extreme outliers detected)")
+    elif max_val > q99 * 2:  # If max is 2x the 99th percentile
+        upper_cap = train_target.quantile(0.995)  # Cap at 99.5th percentile
+        print(f"   🎯 Using 99.5th percentile cap (moderate outliers detected)")
+    else:
+        upper_cap = train_target.quantile(0.99)  # Cap at 99th percentile
+        print(f"   🎯 Using 99th percentile cap (normal distribution)")
+    
+    # Conservative lower cap
+    lower_cap = train_target.quantile(0.001)
+    
+    print(f"\n🎯 Smart winsorization bounds:")
+    print(f"   Lower cap: ${lower_cap:,.2f}")
+    print(f"   Upper cap: ${upper_cap:,.2f}")
+    
+    # Apply the same logic as conservative winsorization
+    cleaned_dfs = []
+    set_names = ['Training', 'Validation', 'Test']
+
+    for i, (df, set_name) in enumerate(zip(df_list, set_names)):
+        df_clean = df.copy()
+        original_target = df_clean[target_col].copy()
+        df_clean[target_col] = original_target.clip(lower=lower_cap, upper=upper_cap)
+        
+        n_capped = (original_target != df_clean[target_col]).sum()
+        print(f"   ✅ {set_name}: {n_capped:,} values capped ({n_capped/len(df)*100:.1f}%)")
+        
+        df_clean['was_winsorized'] = (original_target != df_clean[target_col]).astype(int)
+        cleaned_dfs.append(df_clean)
+
+    return cleaned_dfs
+
+# =============================================================================
+# IMPLEMENTATION INSTRUCTIONS
+# =============================================================================
+print(f"\n📋 IMPLEMENTATION INSTRUCTIONS")
+print("-" * 40)
+
+print("🔄 STEP 1: Replace your current winsorization")
+print("   Replace this line in your code:")
+print("   train_df_clean, valid_df_clean, test_df_clean = clean_target_outliers([train_df, valid_df, test_df])")
+print("")
+print("   With this line:")
+print("   train_df_clean, valid_df_clean, test_df_clean = clean_target_outliers_conservative([train_df, valid_df, test_df])")
+
+print(f"\n🔄 STEP 2: Check the impact")
+print("   After applying conservative winsorization, check:")
+print("   - How many fewer values were capped")
+print("   - Whether high-income examples are preserved")
+print("   - Model performance improvement")
+
+print(f"\n🔄 STEP 3: Fine-tune if needed")
+print("   If performance is still poor:")
+print("   - Try the smart_winsorization function")
+print("   - Or use OPTION 2/3 in the conservative function")
+print("   - Or skip winsorization entirely for testing")
+
+print(f"\n⚠️ IMPORTANT NOTES:")
+print("   - Conservative winsorization preserves 5x more high earners")
+print("   - This should significantly improve Q-Q plot alignment")
+print("   - May slightly increase noise but preserves learning signal")
+print("   - Monitor for any extreme outliers that might hurt training")
+
+print(f"\n✅ Ready to implement less aggressive winsorization!")

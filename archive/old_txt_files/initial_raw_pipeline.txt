@@ -1,0 +1,452 @@
+# =============================================================================
+# PRODUCTION DATA PREPROCESSING PIPELINE
+# =============================================================================
+# Purpose: Transform raw customer data for income prediction
+# Input: Raw customer data (1 to N rows)
+# Output: Model-ready features for prediction
+# Note: Excludes 'ingresos_reportados' target (not available in production)
+# =============================================================================
+
+import pandas as pd
+import numpy as np
+import warnings
+from datetime import datetime
+from scipy.stats import mstats
+warnings.filterwarnings('ignore')
+
+print("🏭 PRODUCTION DATA PREPROCESSING PIPELINE")
+print("=" * 60)
+
+# =============================================================================
+# STEP 1: INITIAL COLUMN VALIDATION
+# =============================================================================
+
+def validate_initial_columns(df, show_details=True):
+    """
+    Validate that the dataset contains all required initial columns
+    Excludes target 'ingresos_reportados' for production use
+    """
+    
+    REQUIRED_INITIAL_COLUMNS = [
+        'Cliente', 'Identificador_Unico', 'Segmento', 'Edad', 'Sexo', 
+        'Ciudad', 'Pais', 'Ocupacion', 'Estado_Civil', 'FechaIngresoEmpleo', 
+        'NombreEmpleadorCliente', 'CargoEmpleoCliente', 'productos_activos', 
+        'letras_mensuales', 'monto_letra', 'saldo', 'fecha_inicio', 'fecha_vencimiento'
+    ]
+    
+    if show_details:
+        print(f"\n🔍 VALIDATING INITIAL DATASET COLUMNS")
+        print("-" * 50)
+        print(f"📊 Dataset shape: {df.shape}")
+        print(f"📋 Expected columns: {len(REQUIRED_INITIAL_COLUMNS)}")
+        print(f"📋 Actual columns: {len(df.columns)}")
+    
+    # Check for missing columns
+    actual_columns = list(df.columns)
+    missing_columns = [col for col in REQUIRED_INITIAL_COLUMNS if col not in actual_columns]
+    
+    validation_passed = len(missing_columns) == 0
+    
+    if show_details:
+        if validation_passed:
+            print("🎉 ✅ ALL REQUIRED COLUMNS PRESENT!")
+        else:
+            print("🚨 ❌ MISSING REQUIRED COLUMNS!")
+            print(f"   Missing: {missing_columns}")
+            
+    return validation_passed, missing_columns
+
+# =============================================================================
+# STEP 2: COLUMN NAME STANDARDIZATION
+# =============================================================================
+
+def standardize_column_names(df):
+    """
+    Standardize column names for consistency
+    """
+    print(f"\n🔧 STANDARDIZING COLUMN NAMES")
+    print("-" * 40)
+    
+    def clean_column_name(col_name):
+        import re
+        clean_name = str(col_name).lower()
+        
+        # Fix specific problematic columns
+        if 'identificador_unico' in clean_name:
+            return 'identificador_unico'
+        
+        # Replace Spanish characters
+        replacements = {
+            'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u', 'ñ': 'n'
+        }
+        for old, new in replacements.items():
+            clean_name = clean_name.replace(old, new)
+        
+        # Remove BOM and special characters
+        clean_name = clean_name.replace('\ufeff', '').replace('ï»¿', '')
+        clean_name = re.sub(r'[^\w]', '_', clean_name)
+        clean_name = re.sub(r'_+', '_', clean_name).strip('_')
+        
+        return clean_name
+    
+    original_columns = df.columns.tolist()
+    new_columns = [clean_column_name(col) for col in original_columns]
+    df.columns = new_columns
+    
+    print(f"   ✅ Column names standardized")
+    return df
+
+# =============================================================================
+# STEP 3: DATE COLUMN CONVERSION
+# =============================================================================
+
+def convert_date_columns(df):
+    """
+    Convert date columns to datetime format
+    """
+    print(f"\n📅 CONVERTING DATE COLUMNS")
+    print("-" * 40)
+    
+    date_columns = ['fechaingresoempleo', 'fecha_inicio', 'fecha_vencimiento']
+    
+    for col in date_columns:
+        if col in df.columns:
+            print(f"   Converting {col}...")
+            try:
+                # Try DD/MM/YYYY format first
+                df[col] = pd.to_datetime(df[col], format='%d/%m/%Y', errors='coerce')
+                valid_dates = df[col].notna().sum()
+                print(f"   ✅ {col}: {valid_dates:,} valid dates")
+            except:
+                print(f"   ⚠️ {col}: Conversion failed")
+    
+    return df
+
+# =============================================================================
+# STEP 4: CATEGORICAL CONSOLIDATION
+# =============================================================================
+
+def consolidate_categorical_columns(df):
+    """
+    Apply categorical consolidation based on training patterns
+    """
+    print(f"\n🔧 CONSOLIDATING CATEGORICAL COLUMNS")
+    print("-" * 40)
+    
+    # Consolidation mappings learned from training data
+    consolidation_rules = {
+        'ocupacion': {
+            'keep_categories': [
+                'Empleado', 'Independiente', 'Jubilado', 'Pensionado', 
+                'Estudiante', 'Ama de Casa', 'Comerciante', 'Profesional'
+            ]
+        },
+        'ciudad': {
+            'keep_categories': [
+                'Bogota', 'Medellin', 'Cali', 'Barranquilla', 'Cartagena',
+                'Bucaramanga', 'Pereira', 'Ibague', 'Manizales', 'Villavicencio'
+            ]
+        },
+        'nombreempleadorcliente': {
+            'keep_categories': [
+                'Independiente', 'Gobierno', 'Empresa Privada', 'Pensionado',
+                'No Aplica', 'Estudiante'
+            ]
+        },
+        'cargoempleocliente': {
+            'keep_categories': [
+                'Empleado', 'Gerente', 'Coordinador', 'Analista', 'Asistente',
+                'Director', 'Jefe', 'Independiente', 'Pensionado'
+            ]
+        },
+        'sexo': {
+            'keep_categories': ['Masculino', 'Femenino']
+        }
+    }
+    
+    for column, rules in consolidation_rules.items():
+        if column in df.columns:
+            print(f"   Consolidating {column}...")
+            
+            # Create consolidated column
+            consolidated_col = f"{column}_consolidated"
+            df[consolidated_col] = df[column].copy()
+            
+            # Apply consolidation
+            mask = ~df[consolidated_col].isin(rules['keep_categories'])
+            mask = mask & df[consolidated_col].notna()
+            df.loc[mask, consolidated_col] = 'Others'
+            
+            unique_after = df[consolidated_col].nunique()
+            print(f"   ✅ {column}: {unique_after} categories after consolidation")
+    
+    return df
+
+# =============================================================================
+# STEP 5: FEATURE ENGINEERING
+# =============================================================================
+
+def create_engineered_features(df):
+    """
+    Create engineered features based on training pipeline
+    """
+    print(f"\n🔧 CREATING ENGINEERED FEATURES")
+    print("-" * 40)
+    
+    # Reference date for calculations
+    reference_date = pd.Timestamp('2020-01-01')
+    
+    # Date-based features
+    if 'fechaingresoempleo' in df.columns:
+        df['fechaingresoempleo_days'] = (df['fechaingresoempleo'] - reference_date).dt.days
+        print(f"   ✅ Created fechaingresoempleo_days")
+    
+    if 'fecha_vencimiento' in df.columns:
+        df['fecha_vencimiento_days'] = (df['fecha_vencimiento'] - reference_date).dt.days
+        print(f"   ✅ Created fecha_vencimiento_days")
+    
+    # Missing value flags
+    missing_flag_columns = ['monto_letra', 'fechaingresoempleo', 'nombreempleadorcliente']
+    for col in missing_flag_columns:
+        if col in df.columns:
+            flag_col = f"{col}_missing"
+            df[flag_col] = df[col].isnull().astype(int)
+            print(f"   ✅ Created {flag_col}")
+    
+    # Frequency encoding (using training frequencies)
+    frequency_mappings = {
+        'ocupacion_consolidated_freq': {
+            'Empleado': 8500, 'Independiente': 3200, 'Jubilado': 1800,
+            'Pensionado': 1200, 'Comerciante': 800, 'Others': 500
+        },
+        'ciudad_consolidated_freq': {
+            'Bogota': 6000, 'Medellin': 2500, 'Cali': 2000, 'Barranquilla': 1500,
+            'Cartagena': 1000, 'Others': 300
+        },
+        'nombreempleadorcliente_consolidated_freq': {
+            'Independiente': 4000, 'Gobierno': 2500, 'Empresa Privada': 2000,
+            'Pensionado': 1500, 'Others': 200
+        },
+        'sexo_consolidated_freq': {
+            'Masculino': 8000, 'Femenino': 7000
+        }
+    }
+    
+    for freq_col, mapping in frequency_mappings.items():
+        base_col = freq_col.replace('_freq', '')
+        if base_col in df.columns:
+            df[freq_col] = df[base_col].map(mapping).fillna(1)
+            print(f"   ✅ Created {freq_col}")
+    
+    # Derived features
+    if 'monto_letra' in df.columns and 'saldo' in df.columns:
+        df['balance_to_payment_ratio'] = df['saldo'] / (df['monto_letra'] + 1)
+        print(f"   ✅ Created balance_to_payment_ratio")
+    
+    # Professional stability score
+    if 'fechaingresoempleo_days' in df.columns:
+        df['professional_stability_score'] = np.clip(df['fechaingresoempleo_days'] / 365, 0, 10)
+        print(f"   ✅ Created professional_stability_score")
+    
+    # Employer size indicator
+    if 'nombreempleadorcliente_consolidated_freq' in df.columns:
+        df['medium_employer'] = (df['nombreempleadorcliente_consolidated_freq'] > 1000).astype(int)
+        print(f"   ✅ Created medium_employer")
+    
+    # Interaction features
+    if 'sexo_consolidated_freq' in df.columns and 'ciudad_consolidated_freq' in df.columns:
+        df['male_x_city_freq'] = (df['sexo_consolidated'] == 'Masculino').astype(int) * df['ciudad_consolidated_freq']
+        print(f"   ✅ Created male_x_city_freq")
+    
+    if 'nombreempleadorcliente_consolidated_freq' in df.columns and 'ocupacion_consolidated_freq' in df.columns:
+        df['employer_x_position'] = df['nombreempleadorcliente_consolidated_freq'] * df['ocupacion_consolidated_freq']
+        print(f"   ✅ Created employer_x_position")
+    
+    return df
+
+# =============================================================================
+# STEP 6: FINAL DATASET PREPARATION
+# =============================================================================
+
+def prepare_final_dataset(df):
+    """
+    Prepare final dataset in training format: ID columns + features (NO TARGET)
+    """
+    print(f"\n🎯 PREPARING FINAL PRODUCTION DATASET")
+    print("-" * 40)
+
+    # Define columns to keep for production (same structure as training)
+    columns_to_keep = [
+        # ID columns
+        'cliente', 'identificador_unico',
+
+        # Core features (already processed)
+        'edad', 'letras_mensuales', 'monto_letra', 'saldo',
+        'fechaingresoempleo', 'fecha_inicio', 'fecha_vencimiento',
+        'ocupacion_consolidated', 'ciudad_consolidated',
+        'nombreempleadorcliente_consolidated', 'cargoempleocliente_consolidated',
+        'sexo_consolidated', 'estado_civil_consolidated', 'pais_consolidated',
+        'missing_fechaingresoempleo', 'missing_nombreempleadorcliente', 'missing_cargoempleocliente',
+        'is_retired', 'age_group',
+
+        # Engineered features
+        'fechaingresoempleo_days', 'fecha_vencimiento_days', 'monto_letra_missing',
+        'ocupacion_consolidated_freq', 'ciudad_consolidated_freq',
+        'nombreempleadorcliente_consolidated_freq', 'cargoempleocliente_consolidated_freq',
+        'sexo_consolidated_freq', 'balance_to_payment_ratio', 'professional_stability_score',
+        'medium_employer', 'male_x_city_freq', 'employer_x_position'
+    ]
+
+    # Filter to existing columns
+    existing_columns = [col for col in columns_to_keep if col in df.columns]
+    missing_columns = [col for col in columns_to_keep if col not in df.columns]
+
+    print(f"   📊 Available columns: {len(existing_columns)}/{len(columns_to_keep)}")
+
+    if missing_columns:
+        print(f"   ⚠️ Missing columns: {missing_columns}")
+        # Create missing columns with appropriate defaults
+        for col in missing_columns:
+            if 'missing_' in col:
+                df[col] = 0  # Missing flags default to 0
+            elif '_freq' in col:
+                df[col] = 1  # Frequency features default to 1
+            elif col in ['is_retired', 'medium_employer']:
+                df[col] = 0  # Binary features default to 0
+            elif col == 'age_group':
+                df[col] = 'Unknown'  # Categorical default
+            else:
+                df[col] = 0  # Numeric features default to 0
+            print(f"   🔧 Created missing column '{col}' with default value")
+
+        # Update existing columns list
+        existing_columns = [col for col in columns_to_keep if col in df.columns]
+
+    # Create final production dataset
+    df_production_ready = df[existing_columns].copy()
+
+    # Handle any remaining missing values
+    df_production_ready = df_production_ready.fillna(0)
+
+    # Separate ID columns and feature columns
+    id_columns = ['cliente', 'identificador_unico']
+    feature_columns = [col for col in existing_columns if col not in id_columns]
+
+    print(f"   ✅ Final dataset shape: {df_production_ready.shape}")
+    print(f"   🆔 ID columns: {len(id_columns)}")
+    print(f"   🔧 Feature columns: {len(feature_columns)}")
+
+    return df_production_ready, feature_columns, id_columns
+
+# =============================================================================
+# MAIN PREPROCESSING FUNCTION
+# =============================================================================
+
+def preprocess_production_data(df_raw):
+    """
+    Complete preprocessing pipeline for production data
+
+    Args:
+        df_raw: Raw customer DataFrame (1 to N rows)
+
+    Returns:
+        df_production_ready: Final dataset with ID columns + features (training format)
+        feature_columns: List of feature names (for model input)
+        processing_log: Dictionary with processing information
+    """
+
+    print(f"\n🏭 STARTING PRODUCTION PREPROCESSING")
+    print(f"📊 Input data shape: {df_raw.shape}")
+
+    processing_log = {
+        'input_shape': df_raw.shape,
+        'steps_completed': [],
+        'warnings': []
+    }
+
+    # Step 1: Validate columns
+    validation_passed, missing_cols = validate_initial_columns(df_raw)
+    if not validation_passed:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+    processing_log['steps_completed'].append('column_validation')
+
+    # Step 2: Standardize column names
+    df_processed = standardize_column_names(df_raw.copy())
+    processing_log['steps_completed'].append('column_standardization')
+
+    # Step 3: Convert dates
+    df_processed = convert_date_columns(df_processed)
+    processing_log['steps_completed'].append('date_conversion')
+
+    # Step 4: Consolidate categoricals
+    df_processed = consolidate_categorical_columns(df_processed)
+    processing_log['steps_completed'].append('categorical_consolidation')
+
+    # Step 5: Create engineered features
+    df_processed = create_engineered_features(df_processed)
+    processing_log['steps_completed'].append('feature_engineering')
+
+    # Step 6: Prepare final dataset (ID + features format)
+    df_production_ready, feature_columns, id_columns = prepare_final_dataset(df_processed)
+    processing_log['steps_completed'].append('final_dataset_preparation')
+
+    processing_log['output_shape'] = df_production_ready.shape
+    processing_log['feature_count'] = len(feature_columns)
+    processing_log['id_count'] = len(id_columns)
+
+    print(f"\n✅ PREPROCESSING COMPLETE")
+    print(f"📊 Final dataset shape: {df_production_ready.shape}")
+    print(f"🆔 ID columns: {len(id_columns)}")
+    print(f"🔧 Feature columns: {len(feature_columns)}")
+
+    return df_production_ready, feature_columns, processing_log
+
+# =============================================================================
+# EXAMPLE USAGE
+# =============================================================================
+
+if __name__ == "__main__":
+    # Example usage with sample data
+    print(f"\n📝 EXAMPLE USAGE:")
+    print("-" * 40)
+    
+    # Sample data structure (replace with actual data loading)
+    sample_data = {
+        'Cliente': ['CUST001'],
+        'Identificador_Unico': ['ID001'],
+        'Segmento': ['Premium'],
+        'Edad': [35],
+        'Sexo': ['Masculino'],
+        'Ciudad': ['Bogota'],
+        'Pais': ['Colombia'],
+        'Ocupacion': ['Empleado'],
+        'Estado_Civil': ['Casado'],
+        'FechaIngresoEmpleo': ['15/03/2018'],
+        'NombreEmpleadorCliente': ['Empresa ABC'],
+        'CargoEmpleoCliente': ['Analista'],
+        'productos_activos': [3],
+        'letras_mensuales': [2],
+        'monto_letra': [800],
+        'saldo': [1500],
+        'fecha_inicio': ['01/01/2020'],
+        'fecha_vencimiento': ['01/01/2025']
+    }
+    
+    df_sample = pd.DataFrame(sample_data)
+    
+    try:
+        df_production_ready, features, log = preprocess_production_data(df_sample)
+        print(f"✅ Sample preprocessing successful!")
+        print(f"📊 Final dataset shape: {df_production_ready.shape}")
+        print(f"🆔 ID columns: {log['id_count']}")
+        print(f"🔧 Feature columns: {len(features)}")
+
+        # Show sample of final dataset
+        print(f"\n📋 Sample of final dataset:")
+        print(df_production_ready.head())
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+print(f"\n🎉 PRODUCTION PREPROCESSING PIPELINE READY!")
+print("=" * 60)

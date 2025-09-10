@@ -1,0 +1,1413 @@
+# %%
+# =============================================================================
+# INCOME PREDICTION MODEL - NESTED CROSS-VALIDATION PIPELINE
+# =============================================================================
+# Goal: Predict customer income using NESTED CV for unbiased performance estimates
+# Based on: model_process_with_no_tranformations.txt preprocessing structure
+#
+# Key Features:
+# - Nested CV Structure: Outer CV (5 folds) for evaluation, Inner CV (3 folds) for hyperparameter tuning
+# - Robust Metrics: Primary focus on RMSE/MAE instead of R² for better income prediction assessment
+# - Complete Pipeline: From preprocessed data to production-ready model
+# - Comprehensive Analysis: Permutation importance, visualizations, model comparison
+#
+# Models: XGBoost, LightGBM, Random Forest
+# =============================================================================
+
+# %%
+# SECTION 1: IMPORTS AND SETUP
+# =============================================================================
+import pandas as pd
+import numpy as np
+import warnings
+from sklearn.preprocessing import RobustScaler
+from sklearn.model_selection import (KFold, GroupKFold, cross_val_score,
+                                   RandomizedSearchCV)
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.inspection import permutation_importance
+import xgboost as xgb
+import lightgbm as lgb
+import joblib
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
+import json
+from collections import Counter
+
+warnings.filterwarnings('ignore')
+
+print("================================================================================")
+print("NESTED CROSS-VALIDATION INCOME PREDICTION MODEL - STARTED")
+print("================================================================================")
+print("📋 Pipeline based on: model_process_with_no_tranformations.txt")
+print("🎯 Primary Metrics: RMSE (Root Mean Square Error) and MAE (Mean Absolute Error)")
+print("🔄 Nested CV: Outer (5-fold) for evaluation, Inner (3-fold) for hyperparameter tuning")
+
+# %%
+# SECTION 2: PREPARE FINAL DATASETS FOR NESTED CV MODELING
+# =============================================================================
+print("\n🎯 PREPARING FINAL DATASETS FOR NESTED CV")
+print("-" * 60)
+
+# EXPLICIT FEATURE SELECTION APPROACH (from original pipeline)
+id_columns = ['cliente', 'identificador_unico']
+target_column = 'ingresos_reportados'
+
+# Use the selected features from the original pipeline
+# NOTE: Adjust 'selected_features_final' to your actual feature list variable
+feature_columns = selected_features_final
+
+# Verify all selected features exist in the dataset
+available_features = []
+missing_features = []
+
+for feature in feature_columns:
+    if feature in train_df_enhanced.columns:
+        available_features.append(feature)
+    else:
+        missing_features.append(feature)
+
+if missing_features:
+    print(f"⚠️  Missing features (will be skipped): {missing_features}")
+
+feature_columns = available_features
+
+print(f"   📊 Selected feature columns: {len(feature_columns)}")
+print(f"   🎯 Target column: {target_column}")
+
+# Create feature matrices and targets (from original pipeline structure)
+X_train = train_df_enhanced[feature_columns].copy()
+y_train = train_df_enhanced[target_column].copy()
+
+X_valid = valid_df_enhanced[feature_columns].copy()
+y_valid = valid_df_enhanced[target_column].copy()
+
+X_test = test_df_enhanced[feature_columns].copy()
+y_test = test_df_enhanced[target_column].copy()
+
+print(f"\n📈 DATASET SHAPES:")
+print(f"   X_train: {X_train.shape}")
+print(f"   X_valid: {X_valid.shape}")
+print(f"   X_test: {X_test.shape}")
+
+# Combine train and validation for nested CV (test set remains untouched)
+X_train_full = pd.concat([X_train, X_valid], ignore_index=True)
+y_train_full = pd.concat([y_train, y_valid], ignore_index=True)
+
+print(f"   X_train_full (for nested CV): {X_train_full.shape}")
+print(f"   X_test (held out): {X_test.shape}")
+
+# Show selected features grouped by type
+print(f"\n📋 SELECTED FEATURES ({len(feature_columns)} features):")
+print("-" * 60)
+
+# Group features by type for better readability (from original pipeline)
+basic_features = []
+age_features = []
+freq_features = []
+interaction_features = []
+other_features = []
+
+for feature in feature_columns:
+    if feature.startswith('age_group_'):
+        age_features.append(feature)
+    elif feature.endswith('_freq'):
+        freq_features.append(feature)
+    elif '_x_' in feature or 'retired_x_' in feature or 'employer_x_' in feature or 'gender_x_' in feature:
+        interaction_features.append(feature)
+    elif feature in ['edad', 'letras_mensuales', 'monto_letra', 'saldo', 'is_retired']:
+        basic_features.append(feature)
+    else:
+        other_features.append(feature)
+
+print(f"🔢 BASIC FEATURES ({len(basic_features)}): {basic_features}")
+print(f"👥 AGE GROUP FEATURES ({len(age_features)}): {age_features}")
+print(f"📊 FREQUENCY FEATURES ({len(freq_features)}): {freq_features}")
+print(f"⚡ INTERACTION FEATURES ({len(interaction_features)}): {interaction_features}")
+print(f"🔧 OTHER FEATURES ({len(other_features)}): {other_features}")
+
+# Verify data quality
+print(f"\n✅ DATA QUALITY CHECKS:")
+print(f"   Missing values in X_train_full: {X_train_full.isnull().sum().sum()}")
+print(f"   Missing values in y_train_full: {y_train_full.isnull().sum()}")
+print(f"   All features numeric: {all(X_train_full.dtypes.apply(lambda x: x in ['int64', 'float64']))}")
+
+# Save feature list to file for reference
+feature_list_df = pd.DataFrame({
+    'feature_name': feature_columns,
+    'feature_type': ['basic' if f in basic_features else
+                    'age_group' if f in age_features else
+                    'frequency' if f in freq_features else
+                    'interaction' if f in interaction_features else
+                    'other' for f in feature_columns]
+})
+
+feature_list_df.to_csv(data_path + '/nested_cv_feature_list.csv', index=False)
+print(f"\n💾 Feature list saved to: nested_cv_feature_list.csv")
+
+# %%
+# SECTION 3: FEATURE SCALING
+# =============================================================================
+print("\n⚖️ FEATURE SCALING")
+print("-" * 50)
+
+# Apply robust scaling to features (from original pipeline)
+print("   ⚖️ Applying RobustScaler...")
+scaler = RobustScaler()
+
+# Fit scaler on full training data (train + validation combined)
+X_train_full_scaled = pd.DataFrame(
+    scaler.fit_transform(X_train_full),
+    columns=X_train_full.columns,
+    index=X_train_full.index
+)
+
+# Transform test set using the same scaler
+X_test_scaled = pd.DataFrame(
+    scaler.transform(X_test),
+    columns=X_test.columns,
+    index=X_test.index
+)
+
+print("   ✅ Feature scaling complete")
+print(f"   📊 Scaled training data: {X_train_full_scaled.shape}")
+print(f"   📊 Scaled test data: {X_test_scaled.shape}")
+
+# %%
+# SECTION 4: NESTED CROSS-VALIDATION SETUP
+# =============================================================================
+print("\n🔄 NESTED CROSS-VALIDATION SETUP")
+print("-" * 60)
+
+# Define CV strategies with robust metrics focus
+OUTER_CV_FOLDS = 5  # For unbiased performance estimation
+INNER_CV_FOLDS = 3  # For hyperparameter tuning
+RANDOM_SEARCH_ITERATIONS = 15  # Increased for better hyperparameter search
+
+# Create CV objects
+outer_cv = KFold(n_splits=OUTER_CV_FOLDS, shuffle=True, random_state=42)
+inner_cv = KFold(n_splits=INNER_CV_FOLDS, shuffle=True, random_state=42)
+
+print(f"   🔄 Outer CV: {OUTER_CV_FOLDS} folds (for unbiased model evaluation)")
+print(f"   🔄 Inner CV: {INNER_CV_FOLDS} folds (for hyperparameter tuning)")
+print(f"   🔍 Random Search: {RANDOM_SEARCH_ITERATIONS} iterations per inner fold")
+print(f"   📊 Total model trainings: {OUTER_CV_FOLDS * INNER_CV_FOLDS * RANDOM_SEARCH_ITERATIONS} per model")
+print(f"      ({OUTER_CV_FOLDS} outer × {INNER_CV_FOLDS} inner × {RANDOM_SEARCH_ITERATIONS} iterations)")
+
+# %%
+# SECTION 5: MODEL DEFINITIONS AND HYPERPARAMETER GRIDS
+# =============================================================================
+print("\n🤖 MODEL DEFINITIONS AND HYPERPARAMETER GRIDS")
+print("-" * 60)
+
+# Base models (from original pipeline with robust configurations)
+base_models = {
+    'XGBoost': xgb.XGBRegressor(random_state=42, n_jobs=-1),
+    'LightGBM': lgb.LGBMRegressor(random_state=42, n_jobs=-1, verbose=-1),
+    'Random Forest': RandomForestRegressor(random_state=42, n_jobs=-1)
+}
+
+# Comprehensive hyperparameter grids for nested CV
+# These grids are designed for income prediction optimization
+param_grids = {
+    'XGBoost': {
+        'n_estimators': [300, 500, 700],
+        'max_depth': [6, 8, 10],
+        'learning_rate': [0.01, 0.05, 0.1],
+        'subsample': [0.8, 0.85, 0.9],
+        'colsample_bytree': [0.8, 0.85, 0.9],
+        'reg_alpha': [0, 0.1, 0.5],
+        'reg_lambda': [0.5, 1.0, 2.0],
+        'min_child_weight': [1, 3, 5]
+    },
+    'LightGBM': {
+        'n_estimators': [300, 500, 700],
+        'max_depth': [8, 12, 16],
+        'learning_rate': [0.01, 0.05, 0.1],
+        'subsample': [0.8, 0.85, 0.9],
+        'colsample_bytree': [0.8, 0.85, 0.9],
+        'num_leaves': [50, 100, 150],
+        'min_child_samples': [10, 20, 30],
+        'reg_alpha': [0, 0.1, 0.5],
+        'reg_lambda': [0.5, 1.0, 2.0]
+    },
+    'Random Forest': {
+        'n_estimators': [200, 300, 400],
+        'max_depth': [10, 15, 20, None],
+        'min_samples_split': [5, 10, 15],
+        'min_samples_leaf': [2, 5, 10],
+        'max_features': ['sqrt', 'log2', 0.8],
+        'max_samples': [0.7, 0.8, 0.9]
+    }
+}
+
+print(f"   🤖 Models defined: {list(base_models.keys())}")
+print(f"   🔧 Hyperparameter search space per model:")
+for model_name, grid in param_grids.items():
+    total_combinations = np.prod([len(values) for values in grid.values()])
+    print(f"      {model_name}: {total_combinations:,} total combinations")
+
+print(f"\n💡 Primary Optimization Metric: RMSE (Root Mean Square Error)")
+print(f"   📊 RMSE penalizes large prediction errors more heavily")
+print(f"   💰 Better suited for income prediction than R² alone")
+print(f"   📈 Lower RMSE = Better model performance")
+
+# %%
+# SECTION 6: NESTED CROSS-VALIDATION IMPLEMENTATION
+# =============================================================================
+print("\n🎯 NESTED CROSS-VALIDATION IMPLEMENTATION")
+print("=" * 70)
+
+def nested_cross_validation(model, param_grid, X, y, outer_cv, inner_cv, model_name):
+    """
+    Perform nested cross-validation for unbiased model evaluation with robust metrics focus
+
+    This implementation prioritizes RMSE and MAE as primary metrics for income prediction,
+    while still tracking R² for comparison purposes.
+
+    Args:
+        model: Base model to evaluate
+        param_grid: Hyperparameter grid for tuning
+        X, y: Training data and target
+        outer_cv, inner_cv: Cross-validation objects
+        model_name: Name for reporting
+
+    Returns:
+        dict: Comprehensive nested CV results with robust metrics
+    """
+    print(f"\n🔄 Starting Nested CV for {model_name}")
+    print(f"   📊 Outer folds: {outer_cv.n_splits}, Inner folds: {inner_cv.n_splits}")
+    print(f"   🎯 Primary metrics: RMSE (lower is better), MAE (lower is better)")
+
+    # Storage for results - prioritizing robust metrics
+    outer_scores_rmse = []
+    outer_scores_mae = []
+    outer_scores_r2 = []  # Still track R² for comparison
+    best_params_per_fold = []
+    fold_details = []
+
+    # Outer CV loop - each iteration gives unbiased performance estimate
+    for fold_idx, (train_idx, val_idx) in enumerate(outer_cv.split(X, y), 1):
+        print(f"\n   🔄 Outer Fold {fold_idx}/{outer_cv.n_splits}")
+
+        # Split data for this outer fold
+        X_train_outer = X.iloc[train_idx]
+        X_val_outer = X.iloc[val_idx]
+        y_train_outer = y.iloc[train_idx]
+        y_val_outer = y.iloc[val_idx]
+
+        print(f"      📊 Fold {fold_idx} sizes: Train={len(train_idx)}, Val={len(val_idx)}")
+
+        # Inner CV: Hyperparameter tuning using RMSE as optimization metric
+        print(f"      🔧 Inner CV: Hyperparameter tuning (optimizing RMSE)...")
+
+        random_search = RandomizedSearchCV(
+            estimator=model,
+            param_distributions=param_grid,
+            n_iter=RANDOM_SEARCH_ITERATIONS,  # Use global variable
+            cv=inner_cv,
+            scoring='neg_mean_squared_error',  # Optimizing RMSE (MSE negated)
+            n_jobs=-1,
+            random_state=42,
+            verbose=0
+        )
+
+        # Fit hyperparameter search on outer training data
+        random_search.fit(X_train_outer, y_train_outer)
+
+        # Get best model from inner CV
+        best_model = random_search.best_estimator_
+        best_params = random_search.best_params_
+        best_params_per_fold.append(best_params)
+
+        # Convert negative MSE back to RMSE for reporting
+        best_inner_rmse = np.sqrt(-random_search.best_score_)
+        print(f"      ✅ Best inner CV RMSE: ${best_inner_rmse:.2f}")
+
+        # Evaluate best model on outer validation fold
+        y_pred_outer = best_model.predict(X_val_outer)
+
+        # Calculate comprehensive metrics for this outer fold
+        fold_rmse = np.sqrt(mean_squared_error(y_val_outer, y_pred_outer))
+        fold_mae = mean_absolute_error(y_val_outer, y_pred_outer)
+        fold_r2 = r2_score(y_val_outer, y_pred_outer)
+
+        # Store scores
+        outer_scores_rmse.append(fold_rmse)
+        outer_scores_mae.append(fold_mae)
+        outer_scores_r2.append(fold_r2)
+
+        print(f"      📊 Outer fold performance:")
+        print(f"         🎯 RMSE: ${fold_rmse:.2f}")
+        print(f"         🎯 MAE:  ${fold_mae:.2f}")
+        print(f"         📈 R²:   {fold_r2:.4f}")
+
+        # Calculate additional income-specific metrics
+        # Mean Absolute Percentage Error (MAPE) - but handle low incomes carefully
+        valid_mask = y_val_outer > 100  # Avoid division by very small numbers
+        if valid_mask.sum() > 0:
+            mape = np.mean(np.abs((y_val_outer[valid_mask] - y_pred_outer[valid_mask]) / y_val_outer[valid_mask])) * 100
+            print(f"         💰 MAPE (>$100): {mape:.1f}%")
+        else:
+            mape = np.nan
+
+        # Store detailed results for this fold
+        fold_details.append({
+            'fold': fold_idx,
+            'rmse': fold_rmse,
+            'mae': fold_mae,
+            'r2': fold_r2,
+            'mape': mape,
+            'best_params': best_params,
+            'inner_cv_rmse': best_inner_rmse,
+            'train_size': len(train_idx),
+            'val_size': len(val_idx),
+            'y_true_mean': y_val_outer.mean(),
+            'y_pred_mean': y_pred_outer.mean()
+        })
+
+    # Calculate final nested CV results with robust metrics emphasis
+    nested_cv_results = {
+        'model_name': model_name,
+        # Primary metrics (RMSE/MAE)
+        'outer_cv_rmse_mean': np.mean(outer_scores_rmse),
+        'outer_cv_rmse_std': np.std(outer_scores_rmse),
+        'outer_cv_mae_mean': np.mean(outer_scores_mae),
+        'outer_cv_mae_std': np.std(outer_scores_mae),
+        # Secondary metric (R²)
+        'outer_cv_r2_mean': np.mean(outer_scores_r2),
+        'outer_cv_r2_std': np.std(outer_scores_r2),
+        # Raw scores for analysis
+        'outer_scores_rmse': outer_scores_rmse,
+        'outer_scores_mae': outer_scores_mae,
+        'outer_scores_r2': outer_scores_r2,
+        # Hyperparameter analysis
+        'best_params_per_fold': best_params_per_fold,
+        'fold_details': fold_details,
+        # Model selection criteria (lower is better for RMSE/MAE)
+        'selection_metric': 'rmse',  # Primary metric for model selection
+        'selection_score': np.mean(outer_scores_rmse)
+    }
+
+    print(f"\n   🏆 {model_name} Nested CV Summary:")
+    print(f"      🎯 RMSE: ${nested_cv_results['outer_cv_rmse_mean']:.2f} ± ${nested_cv_results['outer_cv_rmse_std']:.2f}")
+    print(f"      🎯 MAE:  ${nested_cv_results['outer_cv_mae_mean']:.2f} ± ${nested_cv_results['outer_cv_mae_std']:.2f}")
+    print(f"      📈 R²:   {nested_cv_results['outer_cv_r2_mean']:.4f} ± {nested_cv_results['outer_cv_r2_std']:.4f}")
+
+    return nested_cv_results
+
+print("✅ Nested CV function defined with robust metrics focus")
+
+# %%
+# SECTION 7: RUN NESTED CROSS-VALIDATION FOR ALL MODELS
+# =============================================================================
+print("\n🚀 RUNNING NESTED CROSS-VALIDATION FOR ALL MODELS")
+print("=" * 70)
+print("⚠️  This will take 20-60 minutes depending on your hardware...")
+print(f"   Each model will be trained {OUTER_CV_FOLDS * INNER_CV_FOLDS * RANDOM_SEARCH_ITERATIONS} times")
+print(f"   ({OUTER_CV_FOLDS} outer × {INNER_CV_FOLDS} inner × {RANDOM_SEARCH_ITERATIONS} iterations)")
+print("🎯 Optimizing for RMSE (Root Mean Square Error) - best metric for income prediction")
+
+# Storage for all nested CV results
+nested_cv_results = {}
+total_start_time = datetime.now()
+
+# Run nested CV for each model
+for model_idx, (model_name, base_model) in enumerate(base_models.items(), 1):
+    print(f"\n{'='*80}")
+    print(f"NESTED CV {model_idx}/{len(base_models)}: {model_name.upper()}")
+    print(f"{'='*80}")
+
+    model_start_time = datetime.now()
+
+    # Run nested cross-validation
+    results = nested_cross_validation(
+        model=base_model,
+        param_grid=param_grids[model_name],
+        X=X_train_full_scaled,  # Use full training data (train + validation)
+        y=y_train_full,
+        outer_cv=outer_cv,
+        inner_cv=inner_cv,
+        model_name=model_name
+    )
+
+    nested_cv_results[model_name] = results
+
+    model_end_time = datetime.now()
+    model_duration = (model_end_time - model_start_time).total_seconds() / 60
+
+    print(f"\n   ⏱️ {model_name} completed in {model_duration:.1f} minutes")
+
+    # Show progress
+    remaining_models = len(base_models) - model_idx
+    if remaining_models > 0:
+        estimated_remaining = model_duration * remaining_models
+        print(f"   📊 Progress: {model_idx}/{len(base_models)} models complete")
+        print(f"   ⏰ Estimated remaining time: {estimated_remaining:.1f} minutes")
+
+total_end_time = datetime.now()
+total_duration = (total_end_time - total_start_time).total_seconds() / 60
+
+print(f"\n🎉 ALL NESTED CV COMPLETED!")
+print(f"⏱️ Total execution time: {total_duration:.1f} minutes")
+
+# %%
+# SECTION 8: NESTED CV RESULTS ANALYSIS AND MODEL COMPARISON
+# =============================================================================
+print("\n📊 NESTED CV RESULTS ANALYSIS AND MODEL COMPARISON")
+print("=" * 70)
+
+# Create comprehensive comparison DataFrame with robust metrics focus
+comparison_data = []
+for model_name, results in nested_cv_results.items():
+    comparison_data.append({
+        'Model': model_name,
+        # Primary metrics (lower is better)
+        'Nested_CV_RMSE_Mean': results['outer_cv_rmse_mean'],
+        'Nested_CV_RMSE_Std': results['outer_cv_rmse_std'],
+        'Nested_CV_MAE_Mean': results['outer_cv_mae_mean'],
+        'Nested_CV_MAE_Std': results['outer_cv_mae_std'],
+        # Secondary metric
+        'Nested_CV_R2_Mean': results['outer_cv_r2_mean'],
+        'Nested_CV_R2_Std': results['outer_cv_r2_std'],
+        # Selection score (RMSE for ranking)
+        'Selection_Score': results['selection_score']
+    })
+
+nested_comparison_df = pd.DataFrame(comparison_data)
+# Sort by RMSE (lower is better) - primary metric for income prediction
+nested_comparison_df = nested_comparison_df.sort_values('Nested_CV_RMSE_Mean', ascending=True)
+
+print("\n🏆 NESTED CV PERFORMANCE COMPARISON (Sorted by RMSE - Lower is Better):")
+print("=" * 90)
+print(nested_comparison_df.round(4).to_string(index=False))
+
+# Identify best model based on RMSE (robust metric for income prediction)
+best_model_nested = nested_comparison_df.iloc[0]['Model']
+best_rmse_nested = nested_comparison_df.iloc[0]['Nested_CV_RMSE_Mean']
+best_rmse_std_nested = nested_comparison_df.iloc[0]['Nested_CV_RMSE_Std']
+best_mae_nested = nested_comparison_df.iloc[0]['Nested_CV_MAE_Mean']
+best_mae_std_nested = nested_comparison_df.iloc[0]['Nested_CV_MAE_Std']
+best_r2_nested = nested_comparison_df.iloc[0]['Nested_CV_R2_Mean']
+best_r2_std_nested = nested_comparison_df.iloc[0]['Nested_CV_R2_Std']
+
+print(f"\n🥇 BEST MODEL (Based on RMSE): {best_model_nested}")
+print(f"   🎯 Unbiased RMSE: ${best_rmse_nested:.2f} ± ${best_rmse_std_nested:.2f}")
+print(f"   🎯 Unbiased MAE:  ${best_mae_nested:.2f} ± ${best_mae_std_nested:.2f}")
+print(f"   📈 Unbiased R²:   {best_r2_nested:.4f} ± {best_r2_std_nested:.4f}")
+
+# Calculate confidence intervals for RMSE (primary metric)
+rmse_ci_lower = best_rmse_nested - 1.96 * best_rmse_std_nested
+rmse_ci_upper = best_rmse_nested + 1.96 * best_rmse_std_nested
+print(f"   📊 95% Confidence Interval (RMSE): [${rmse_ci_lower:.2f}, ${rmse_ci_upper:.2f}]")
+
+# Performance assessment based on RMSE
+print(f"\n📈 PERFORMANCE ASSESSMENT:")
+if best_rmse_nested <= 600:
+    performance_level = "EXCELLENT"
+    emoji = "🎉"
+elif best_rmse_nested <= 800:
+    performance_level = "GOOD"
+    emoji = "✅"
+elif best_rmse_nested <= 1000:
+    performance_level = "ACCEPTABLE"
+    emoji = "👍"
+else:
+    performance_level = "NEEDS IMPROVEMENT"
+    emoji = "⚠️"
+
+print(f"   {emoji} Performance Level: {performance_level}")
+print(f"   💰 RMSE = ${best_rmse_nested:.2f} (Average prediction error)")
+print(f"   💰 MAE = ${best_mae_nested:.2f} (Median prediction error)")
+
+# Model ranking summary
+print(f"\n📋 MODEL RANKING (by RMSE):")
+for idx, row in nested_comparison_df.iterrows():
+    rank = nested_comparison_df.index.get_loc(idx) + 1
+    model = row['Model']
+    rmse = row['Nested_CV_RMSE_Mean']
+    rmse_std = row['Nested_CV_RMSE_Std']
+    print(f"   {rank}. {model:<15}: RMSE = ${rmse:.2f} ± ${rmse_std:.2f}")
+
+print(f"\n💡 INTERPRETATION:")
+print(f"   🎯 RMSE measures average prediction error in dollars")
+print(f"   🎯 MAE measures typical prediction error (less sensitive to outliers)")
+print(f"   📈 R² measures proportion of variance explained (0-1 scale)")
+print(f"   ✅ Lower RMSE/MAE = Better model for income prediction")
+
+# %%
+# SECTION 10: NESTED CV RESULTS ANALYSIS
+# =============================================================================
+print("\n📊 NESTED CV RESULTS ANALYSIS")
+print("=" * 60)
+
+# Create comparison DataFrame
+comparison_data = []
+for model_name, results in nested_cv_results.items():
+    comparison_data.append({
+        'Model': model_name,
+        'Nested_CV_R2_Mean': results['outer_cv_r2_mean'],
+        'Nested_CV_R2_Std': results['outer_cv_r2_std'],
+        'Nested_CV_RMSE_Mean': results['outer_cv_rmse_mean'],
+        'Nested_CV_RMSE_Std': results['outer_cv_rmse_std'],
+        'Nested_CV_MAE_Mean': results['outer_cv_mae_mean'],
+        'Nested_CV_MAE_Std': results['outer_cv_mae_std']
+    })
+
+nested_comparison_df = pd.DataFrame(comparison_data)
+nested_comparison_df = nested_comparison_df.sort_values('Nested_CV_R2_Mean', ascending=False)
+
+print("\n🏆 NESTED CV PERFORMANCE COMPARISON:")
+print("=" * 80)
+print(nested_comparison_df.round(4).to_string(index=False))
+
+# Identify best model from nested CV
+best_model_nested = nested_comparison_df.iloc[0]['Model']
+best_r2_nested = nested_comparison_df.iloc[0]['Nested_CV_R2_Mean']
+best_r2_std_nested = nested_comparison_df.iloc[0]['Nested_CV_R2_Std']
+
+print(f"\n🥇 BEST MODEL (Nested CV): {best_model_nested}")
+print(f"   📊 Unbiased R²: {best_r2_nested:.4f} ± {best_r2_std_nested:.4f}")
+print(f"   📊 95% Confidence Interval: [{best_r2_nested - 1.96*best_r2_std_nested:.4f}, {best_r2_nested + 1.96*best_r2_std_nested:.4f}]")
+
+# %%
+# SECTION 9: HYPERPARAMETER ANALYSIS AND STABILITY ASSESSMENT
+# =============================================================================
+print("\n🔧 HYPERPARAMETER ANALYSIS AND STABILITY ASSESSMENT")
+print("-" * 70)
+
+# Analyze hyperparameter consistency across folds for model robustness
+for model_name, results in nested_cv_results.items():
+    print(f"\n📋 {model_name} - Hyperparameter Stability Analysis:")
+    print("-" * 50)
+
+    best_params_list = results['best_params_per_fold']
+
+    # Get all unique parameter names
+    all_param_names = set()
+    for params in best_params_list:
+        all_param_names.update(params.keys())
+
+    # Analyze each parameter for consistency
+    stable_params = 0
+    total_params = len(all_param_names)
+
+    for param_name in sorted(all_param_names):
+        param_values = [params.get(param_name, 'N/A') for params in best_params_list]
+        unique_values = list(set(param_values))
+
+        if len(unique_values) == 1:
+            consistency = "✅ STABLE"
+            stable_params += 1
+        elif len(unique_values) == 2:
+            consistency = "⚠️ MODERATE"
+        else:
+            consistency = "❌ UNSTABLE"
+
+        # Show parameter values across folds
+        value_counts = Counter(param_values)
+        most_common = value_counts.most_common(1)[0]
+
+        print(f"   {param_name:<25}: {consistency}")
+        print(f"      Values: {param_values}")
+        print(f"      Most frequent: {most_common[0]} ({most_common[1]}/{len(param_values)} folds)")
+
+    # Calculate stability percentage
+    stability_pct = (stable_params / total_params) * 100
+    print(f"\n   📊 Hyperparameter Stability: {stable_params}/{total_params} stable ({stability_pct:.1f}%)")
+
+    if stability_pct >= 80:
+        print("   ✅ HIGH STABILITY: Model hyperparameters are robust across data splits")
+    elif stability_pct >= 60:
+        print("   👍 MODERATE STABILITY: Some hyperparameter variation across splits")
+    else:
+        print("   ⚠️ LOW STABILITY: High hyperparameter sensitivity to data splits")
+
+# %%
+# SECTION 10: FINAL MODEL TRAINING WITH AGGREGATED BEST HYPERPARAMETERS
+# =============================================================================
+print("\n🎯 FINAL MODEL TRAINING WITH AGGREGATED BEST HYPERPARAMETERS")
+print("=" * 70)
+
+def get_most_frequent_params(best_params_list):
+    """
+    Get the most frequently selected hyperparameters across CV folds
+    This provides robust hyperparameter selection for the final model
+    """
+    # Get all parameter names
+    all_param_names = set()
+    for params in best_params_list:
+        all_param_names.update(params.keys())
+
+    # Find most frequent value for each parameter
+    final_params = {}
+    for param_name in all_param_names:
+        param_values = [params.get(param_name) for params in best_params_list if param_name in params]
+        if param_values:
+            # Get most common value
+            most_common = Counter(param_values).most_common(1)[0][0]
+            final_params[param_name] = most_common
+
+    return final_params
+
+# Get best hyperparameters for the winning model
+best_model_results = nested_cv_results[best_model_nested]
+best_params_final = get_most_frequent_params(best_model_results['best_params_per_fold'])
+
+print(f"🏆 Training final {best_model_nested} model with aggregated best parameters:")
+print("📋 Final hyperparameters (most frequent across CV folds):")
+for param, value in sorted(best_params_final.items()):
+    print(f"   {param:<25}: {value}")
+
+# Create and train final model on full training data
+print(f"\n🚀 Training final {best_model_nested} model...")
+final_model = base_models[best_model_nested].set_params(**best_params_final)
+final_model.fit(X_train_full_scaled, y_train_full)
+
+print(f"✅ Final {best_model_nested} model trained on full training set")
+print(f"   📊 Training data: {X_train_full_scaled.shape[0]:,} samples")
+print(f"   🔧 Features: {len(feature_columns)} variables")
+print(f"   🎯 Expected RMSE: ${best_rmse_nested:.2f} ± ${best_rmse_std_nested:.2f}")
+
+# %%
+# SECTION 12: FINAL MODEL TRAINING WITH BEST HYPERPARAMETERS
+# =============================================================================
+print("\n🎯 FINAL MODEL TRAINING WITH BEST HYPERPARAMETERS")
+print("=" * 60)
+
+def get_most_frequent_params(best_params_list):
+    """
+    Get the most frequently selected hyperparameters across CV folds
+    """
+    from collections import Counter
+
+    # Get all parameter names
+    all_param_names = set()
+    for params in best_params_list:
+        all_param_names.update(params.keys())
+
+    # Find most frequent value for each parameter
+    final_params = {}
+    for param_name in all_param_names:
+        param_values = [params.get(param_name) for params in best_params_list if param_name in params]
+        if param_values:
+            # Get most common value
+            most_common = Counter(param_values).most_common(1)[0][0]
+            final_params[param_name] = most_common
+
+    return final_params
+
+# Get best hyperparameters for the winning model
+best_model_results = nested_cv_results[best_model_nested]
+best_params_final = get_most_frequent_params(best_model_results['best_params_per_fold'])
+
+print(f"🏆 Training final {best_model_nested} model with aggregated best parameters:")
+print("📋 Final hyperparameters (most frequent across CV folds):")
+for param, value in best_params_final.items():
+    print(f"   {param}: {value}")
+
+# Create and train final model
+final_model = base_models[best_model_nested].set_params(**best_params_final)
+final_model.fit(X_train_scaled, y_train)
+
+print(f"\n✅ Final {best_model_nested} model trained on full training set")
+
+# %%
+# SECTION 11: FINAL MODEL EVALUATION ON TEST SET
+# =============================================================================
+print("\n🎯 FINAL MODEL EVALUATION ON TEST SET")
+print("-" * 60)
+
+# Make predictions on test set (held-out data never seen during nested CV)
+y_pred_test = final_model.predict(X_test_scaled)
+
+# Calculate comprehensive test metrics
+test_rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
+test_mae = mean_absolute_error(y_test, y_pred_test)
+test_r2 = r2_score(y_test, y_pred_test)
+
+# Calculate additional income-specific metrics
+# MAPE for incomes > $100 (avoid division by very small numbers)
+valid_mask = y_test > 100
+if valid_mask.sum() > 0:
+    test_mape = np.mean(np.abs((y_test[valid_mask] - y_pred_test[valid_mask]) / y_test[valid_mask])) * 100
+else:
+    test_mape = np.nan
+
+print(f"🏆 FINAL TEST PERFORMANCE ({best_model_nested}):")
+print("=" * 60)
+print(f"   🎯 Test RMSE: ${test_rmse:.2f}")
+print(f"   🎯 Test MAE:  ${test_mae:.2f}")
+print(f"   📈 Test R²:   {test_r2:.4f}")
+if not np.isnan(test_mape):
+    print(f"   💰 Test MAPE (>$100): {test_mape:.1f}%")
+
+# Compare with nested CV estimates (validation of nested CV effectiveness)
+print(f"\n📊 NESTED CV vs TEST SET COMPARISON:")
+print("-" * 50)
+print(f"   Metric    | Nested CV Estimate | Test Set | Difference")
+print(f"   ----------|-------------------|----------|----------")
+print(f"   RMSE      | ${best_rmse_nested:.2f} ± ${best_rmse_std_nested:.2f}     | ${test_rmse:.2f}     | ${abs(test_rmse - best_rmse_nested):.2f}")
+print(f"   MAE       | ${best_mae_nested:.2f} ± ${best_mae_std_nested:.2f}     | ${test_mae:.2f}     | ${abs(test_mae - best_mae_nested):.2f}")
+print(f"   R²        | {best_r2_nested:.4f} ± {best_r2_std_nested:.4f} | {test_r2:.4f}   | {abs(test_r2 - best_r2_nested):.4f}")
+
+# Assess nested CV prediction accuracy
+rmse_within_ci = abs(test_rmse - best_rmse_nested) <= 2 * best_rmse_std_nested
+mae_within_ci = abs(test_mae - best_mae_nested) <= 2 * best_mae_std_nested
+r2_within_ci = abs(test_r2 - best_r2_nested) <= 2 * best_r2_std_nested
+
+print(f"\n✅ NESTED CV VALIDATION:")
+print(f"   RMSE within 95% CI: {'✅ YES' if rmse_within_ci else '⚠️ NO'}")
+print(f"   MAE within 95% CI:  {'✅ YES' if mae_within_ci else '⚠️ NO'}")
+print(f"   R² within 95% CI:   {'✅ YES' if r2_within_ci else '⚠️ NO'}")
+
+if rmse_within_ci and mae_within_ci:
+    print("   🎉 EXCELLENT: Nested CV provided accurate performance estimates!")
+elif rmse_within_ci or mae_within_ci:
+    print("   👍 GOOD: Nested CV estimates reasonably accurate")
+else:
+    print("   ⚠️ WARNING: Test performance differs significantly from nested CV estimates")
+
+# Target distribution comparison (from original pipeline)
+print(f"\n📈 TARGET DISTRIBUTION COMPARISON:")
+print(f"   Training Full - Mean: ${y_train_full.mean():,.2f}, Std: ${y_train_full.std():,.2f}")
+print(f"   Test Set      - Mean: ${y_test.mean():,.2f}, Std: ${y_test.std():,.2f}")
+print(f"   Predictions   - Mean: ${y_pred_test.mean():,.2f}, Std: ${y_pred_test.std():,.2f}")
+
+# %%
+# SECTION 12: PERMUTATION IMPORTANCE ANALYSIS
+# =============================================================================
+print("\n🔍 PERMUTATION IMPORTANCE ANALYSIS")
+print("-" * 60)
+
+# Calculate permutation importance on test set (from original pipeline)
+print("🔄 Calculating permutation importance (this may take a few minutes)...")
+perm_importance = permutation_importance(
+    final_model,
+    X_test_scaled,
+    y_test,
+    n_repeats=15,  # More repeats for robust estimates
+    random_state=42,
+    scoring='neg_mean_squared_error'  # Use RMSE-based scoring
+)
+
+# Convert to RMSE importance (from negative MSE)
+feature_importance_mean = np.sqrt(-perm_importance.importances_mean)
+feature_importance_std = perm_importance.importances_std / (2 * np.sqrt(-perm_importance.importances_mean))
+
+# Create importance DataFrame
+importance_df = pd.DataFrame({
+    'feature': feature_columns,
+    'importance_mean': feature_importance_mean,
+    'importance_std': feature_importance_std
+}).sort_values('importance_mean', ascending=False)
+
+print(f"\n📊 TOP 15 MOST IMPORTANT FEATURES (by RMSE impact):")
+print("-" * 60)
+for i, (_, row) in enumerate(importance_df.head(15).iterrows(), 1):
+    print(f"   {i:2d}. {row['feature']:<30} {row['importance_mean']:>8.2f} ± {row['importance_std']:>6.2f}")
+
+# Save importance results
+importance_df.to_csv(data_path + '/nested_cv_permutation_importance.csv', index=False)
+print(f"\n💾 Permutation importance saved to: nested_cv_permutation_importance.csv")
+
+# Create permutation importance visualization (from original pipeline)
+print(f"\n📈 Creating permutation importance visualization...")
+
+plt.figure(figsize=(10, 8))
+
+# Get top 20 features for visualization
+num_features_to_plot = min(20, len(feature_importance_mean))
+top_features = importance_df.head(num_features_to_plot)
+
+# Create horizontal bar plot
+y_pos = np.arange(num_features_to_plot)
+plt.barh(y_pos, top_features['importance_mean'],
+         xerr=top_features['importance_std'],
+         capsize=3, alpha=0.7, color='steelblue')
+
+plt.yticks(y_pos, top_features['feature'])
+plt.xlabel('RMSE Increase When Feature Permuted ($)')
+plt.title(f'Permutation Importance - Top {num_features_to_plot} Features\n({best_model_nested} Model)')
+plt.grid(True, alpha=0.3, axis='x')
+plt.tight_layout()
+
+# Save plot
+plt.savefig(data_path + '/nested_cv_permutation_importance.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+print(f"✅ Permutation importance visualization saved to: nested_cv_permutation_importance.png")
+
+# Feature importance insights
+print(f"\n💡 FEATURE IMPORTANCE INSIGHTS:")
+top_5_features = importance_df.head(5)['feature'].tolist()
+print(f"   🔝 Top 5 features: {', '.join(top_5_features)}")
+
+# Analyze feature types in top 10
+top_10_features = importance_df.head(10)['feature'].tolist()
+top_basic = [f for f in top_10_features if f in basic_features]
+top_age = [f for f in top_10_features if f in age_features]
+top_interaction = [f for f in top_10_features if f in interaction_features]
+
+print(f"   📊 In top 10 - Basic: {len(top_basic)}, Age: {len(top_age)}, Interaction: {len(top_interaction)}")
+print(f"   💰 Feature importance measured as RMSE increase when feature is randomly shuffled")
+
+# %%
+# SECTION 13: COMPREHENSIVE VISUALIZATIONS
+# =============================================================================
+print("\n📈 CREATING COMPREHENSIVE NESTED CV VISUALIZATIONS")
+print("-" * 60)
+
+# Create comprehensive visualization dashboard
+fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+fig.suptitle('Nested Cross-Validation Results Dashboard', fontsize=16, fontweight='bold')
+
+# 1. Model comparison by RMSE (primary metric)
+ax1 = axes[0, 0]
+models = nested_comparison_df['Model']
+rmse_means = nested_comparison_df['Nested_CV_RMSE_Mean']
+rmse_stds = nested_comparison_df['Nested_CV_RMSE_Std']
+
+bars = ax1.bar(models, rmse_means, yerr=rmse_stds, capsize=5, alpha=0.7,
+               color=['gold' if m == best_model_nested else 'lightblue' for m in models])
+ax1.set_ylabel('RMSE ($)')
+ax1.set_title('Model Comparison by RMSE (Lower is Better)')
+ax1.grid(True, alpha=0.3)
+ax1.tick_params(axis='x', rotation=45)
+
+# Add value labels
+for bar, mean, std in zip(bars, rmse_means, rmse_stds):
+    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + std + 10,
+             f'${mean:.0f}±{std:.0f}', ha='center', va='bottom', fontsize=9)
+
+# 2. RMSE scores across CV folds for best model
+ax2 = axes[0, 1]
+best_rmse_scores = nested_cv_results[best_model_nested]['outer_scores_rmse']
+fold_numbers = range(1, len(best_rmse_scores) + 1)
+
+ax2.plot(fold_numbers, best_rmse_scores, 'o-', linewidth=2, markersize=8, color='red')
+ax2.axhline(y=np.mean(best_rmse_scores), color='red', linestyle='--', alpha=0.7,
+            label=f'Mean: ${np.mean(best_rmse_scores):.0f}')
+ax2.fill_between(fold_numbers,
+                 np.mean(best_rmse_scores) - np.std(best_rmse_scores),
+                 np.mean(best_rmse_scores) + np.std(best_rmse_scores),
+                 alpha=0.2, color='red')
+ax2.set_xlabel('CV Fold')
+ax2.set_ylabel('RMSE ($)')
+ax2.set_title(f'{best_model_nested} - RMSE Across CV Folds')
+ax2.legend()
+ax2.grid(True, alpha=0.3)
+
+# 3. MAE comparison
+ax3 = axes[0, 2]
+mae_means = nested_comparison_df['Nested_CV_MAE_Mean']
+mae_stds = nested_comparison_df['Nested_CV_MAE_Std']
+
+bars = ax3.bar(models, mae_means, yerr=mae_stds, capsize=5, alpha=0.7,
+               color=['coral' if m == best_model_nested else 'lightgreen' for m in models])
+ax3.set_ylabel('MAE ($)')
+ax3.set_title('Model Comparison by MAE (Lower is Better)')
+ax3.grid(True, alpha=0.3)
+ax3.tick_params(axis='x', rotation=45)
+
+# 4. Nested CV vs Test Set comparison
+ax4 = axes[1, 0]
+metrics = ['RMSE', 'MAE', 'R²']
+nested_values = [best_rmse_nested, best_mae_nested, best_r2_nested]
+test_values = [test_rmse, test_mae, test_r2]
+
+x = np.arange(len(metrics))
+width = 0.35
+
+bars1 = ax4.bar(x - width/2, nested_values, width, label='Nested CV', alpha=0.7, color='skyblue')
+bars2 = ax4.bar(x + width/2, test_values, width, label='Test Set', alpha=0.7, color='orange')
+
+ax4.set_ylabel('Value')
+ax4.set_title('Nested CV vs Test Set Performance')
+ax4.set_xticks(x)
+ax4.set_xticklabels(metrics)
+ax4.legend()
+ax4.grid(True, alpha=0.3)
+
+# 5. Prediction vs Actual scatter plot
+ax5 = axes[1, 1]
+ax5.scatter(y_test, y_pred_test, alpha=0.6, s=20)
+min_val = min(y_test.min(), y_pred_test.min())
+max_val = max(y_test.max(), y_pred_test.max())
+ax5.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect Prediction')
+ax5.set_xlabel('Actual Income ($)')
+ax5.set_ylabel('Predicted Income ($)')
+ax5.set_title(f'Predictions vs Actual ({best_model_nested})')
+ax5.legend()
+ax5.grid(True, alpha=0.3)
+
+# 6. Residuals plot
+ax6 = axes[1, 2]
+residuals = y_test - y_pred_test
+ax6.scatter(y_pred_test, residuals, alpha=0.6, s=20)
+ax6.axhline(y=0, color='r', linestyle='--', linewidth=2)
+ax6.set_xlabel('Predicted Income ($)')
+ax6.set_ylabel('Residuals ($)')
+ax6.set_title('Residuals Plot')
+ax6.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig(data_path + '/nested_cv_comprehensive_results.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+print("   ✅ Comprehensive visualizations saved to: nested_cv_comprehensive_results.png")
+
+# %%
+# SECTION 14: SAVE NESTED CV RESULTS AND ARTIFACTS
+# =============================================================================
+print("\n💾 SAVING NESTED CV RESULTS AND ARTIFACTS")
+print("-" * 60)
+
+# Create comprehensive nested CV summary
+nested_cv_summary = {
+    'methodology': {
+        'approach': 'Nested Cross-Validation',
+        'outer_folds': OUTER_CV_FOLDS,
+        'inner_folds': INNER_CV_FOLDS,
+        'random_search_iterations': RANDOM_SEARCH_ITERATIONS,
+        'primary_metric': 'RMSE',
+        'total_model_trainings_per_model': OUTER_CV_FOLDS * INNER_CV_FOLDS * RANDOM_SEARCH_ITERATIONS
+    },
+    'nested_cv_results': nested_cv_results,
+    'best_model_name': best_model_nested,
+    'best_hyperparameters': best_params_final,
+    'performance_estimates': {
+        'nested_cv_rmse_mean': best_rmse_nested,
+        'nested_cv_rmse_std': best_rmse_std_nested,
+        'nested_cv_mae_mean': best_mae_nested,
+        'nested_cv_mae_std': best_mae_std_nested,
+        'nested_cv_r2_mean': best_r2_nested,
+        'nested_cv_r2_std': best_r2_std_nested
+    },
+    'test_performance': {
+        'test_rmse': test_rmse,
+        'test_mae': test_mae,
+        'test_r2': test_r2,
+        'test_mape': test_mape if not np.isnan(test_mape) else None
+    },
+    'model_comparison': nested_comparison_df.to_dict('records'),
+    'feature_info': {
+        'total_features': len(feature_columns),
+        'feature_types': {
+            'basic': len(basic_features),
+            'age_group': len(age_features),
+            'frequency': len(freq_features),
+            'interaction': len(interaction_features),
+            'other': len(other_features)
+        }
+    },
+    'execution_info': {
+        'total_duration_minutes': total_duration,
+        'execution_date': datetime.now().isoformat()
+    }
+}
+
+# Save comprehensive results to JSON
+with open(data_path + '/nested_cv_comprehensive_results.json', 'w') as f:
+    # Convert numpy types for JSON serialization
+    def convert_numpy(obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return obj
+
+    json.dump(nested_cv_summary, f, indent=2, default=convert_numpy)
+
+print("   ✅ Comprehensive results saved: nested_cv_comprehensive_results.json")
+
+# Save comparison table
+nested_comparison_df.to_csv(data_path + '/nested_cv_model_comparison.csv', index=False)
+print("   ✅ Model comparison saved: nested_cv_model_comparison.csv")
+
+# Save final model artifacts (compatible with original pipeline)
+final_model_artifacts = {
+    'final_model': final_model,
+    'scaler': scaler,
+    'feature_columns': feature_columns,
+    'model_name': best_model_nested,
+    'hyperparameters': best_params_final,
+    'nested_cv_performance': {
+        'rmse_mean': best_rmse_nested,
+        'rmse_std': best_rmse_std_nested,
+        'mae_mean': best_mae_nested,
+        'mae_std': best_mae_std_nested,
+        'r2_mean': best_r2_nested,
+        'r2_std': best_r2_std_nested
+    },
+    'test_performance': {
+        'rmse': test_rmse,
+        'mae': test_mae,
+        'r2': test_r2,
+        'mape': test_mape if not np.isnan(test_mape) else None
+    },
+    'training_info': {
+        'cv_method': 'Nested Cross-Validation',
+        'outer_folds': OUTER_CV_FOLDS,
+        'inner_folds': INNER_CV_FOLDS,
+        'optimization_metric': 'RMSE',
+        'training_samples': len(X_train_full_scaled),
+        'test_samples': len(X_test_scaled),
+        'training_date': datetime.now().isoformat()
+    }
+}
+
+joblib.dump(final_model_artifacts, data_path + '/nested_cv_final_model.pkl')
+print("   ✅ Final model artifacts saved: nested_cv_final_model.pkl")
+
+# Save enhanced datasets (for compatibility with original pipeline)
+print("   💾 Saving enhanced datasets for reference...")
+# Note: These should already exist from preprocessing, but save references
+with open(data_path + '/nested_cv_data_info.txt', 'w') as f:
+    f.write("Nested CV Data Information\n")
+    f.write("=" * 50 + "\n")
+    f.write(f"Training data (full): {X_train_full_scaled.shape}\n")
+    f.write(f"Test data: {X_test_scaled.shape}\n")
+    f.write(f"Features: {len(feature_columns)}\n")
+    f.write(f"Target: {target_column}\n")
+    f.write(f"Preprocessing: RobustScaler\n")
+
+print("   ✅ Data information saved: nested_cv_data_info.txt")
+
+# %%
+# SECTION 15: VISUALIZATION OF NESTED CV RESULTS
+# =============================================================================
+print("\n📈 CREATING NESTED CV VISUALIZATIONS")
+print("-" * 50)
+
+# Create comprehensive visualization
+fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+fig.suptitle('Nested Cross-Validation Results Analysis', fontsize=16, fontweight='bold')
+
+# 1. Model comparison (R² scores)
+ax1 = axes[0, 0]
+models = nested_comparison_df['Model']
+r2_means = nested_comparison_df['Nested_CV_R2_Mean']
+r2_stds = nested_comparison_df['Nested_CV_R2_Std']
+
+bars = ax1.bar(models, r2_means, yerr=r2_stds, capsize=5, alpha=0.7, color=['gold', 'lightblue', 'lightgreen'])
+ax1.set_ylabel('R² Score')
+ax1.set_title('Model Performance Comparison (Nested CV)')
+ax1.grid(True, alpha=0.3)
+
+# Add value labels on bars
+for bar, mean, std in zip(bars, r2_means, r2_stds):
+    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + std + 0.01,
+             f'{mean:.3f}±{std:.3f}', ha='center', va='bottom', fontsize=9)
+
+# 2. R² scores across CV folds for best model
+ax2 = axes[0, 1]
+best_r2_scores = nested_cv_results[best_model_nested]['outer_scores_r2']
+fold_numbers = range(1, len(best_r2_scores) + 1)
+
+ax2.plot(fold_numbers, best_r2_scores, 'o-', linewidth=2, markersize=8, color='red')
+ax2.axhline(y=np.mean(best_r2_scores), color='red', linestyle='--', alpha=0.7, label=f'Mean: {np.mean(best_r2_scores):.3f}')
+ax2.fill_between(fold_numbers,
+                 np.mean(best_r2_scores) - np.std(best_r2_scores),
+                 np.mean(best_r2_scores) + np.std(best_r2_scores),
+                 alpha=0.2, color='red')
+ax2.set_xlabel('CV Fold')
+ax2.set_ylabel('R² Score')
+ax2.set_title(f'{best_model_nested} - R² Across CV Folds')
+ax2.legend()
+ax2.grid(True, alpha=0.3)
+
+# 3. RMSE comparison
+ax3 = axes[1, 0]
+rmse_means = nested_comparison_df['Nested_CV_RMSE_Mean']
+rmse_stds = nested_comparison_df['Nested_CV_RMSE_Std']
+
+bars = ax3.bar(models, rmse_means, yerr=rmse_stds, capsize=5, alpha=0.7, color=['coral', 'lightblue', 'lightgreen'])
+ax3.set_ylabel('RMSE ($)')
+ax3.set_title('RMSE Comparison (Nested CV)')
+ax3.grid(True, alpha=0.3)
+
+# Add value labels
+for bar, mean, std in zip(bars, rmse_means, rmse_stds):
+    ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + std + 10,
+             f'{mean:.0f}±{std:.0f}', ha='center', va='bottom', fontsize=9)
+
+# 4. Nested CV vs Test Set comparison
+ax4 = axes[1, 1]
+comparison_data = {
+    'Nested CV': best_r2_nested,
+    'Test Set': test_r2
+}
+
+bars = ax4.bar(comparison_data.keys(), comparison_data.values(),
+               color=['skyblue', 'orange'], alpha=0.7)
+ax4.set_ylabel('R² Score')
+ax4.set_title('Nested CV vs Test Set Performance')
+ax4.grid(True, alpha=0.3)
+
+# Add confidence interval for nested CV
+ax4.errorbar('Nested CV', best_r2_nested, yerr=best_r2_std_nested,
+             capsize=5, color='blue', linewidth=2)
+
+# Add value labels
+for bar, value in zip(bars, comparison_data.values()):
+    ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+             f'{value:.4f}', ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+plt.tight_layout()
+plt.savefig(data_path + '/nested_cv_results_visualization.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+print("   ✅ Visualizations created and saved: nested_cv_results_visualization.png")
+
+# %%
+# SECTION 16: NESTED CV SUMMARY REPORT
+# =============================================================================
+print("\n📋 NESTED CV SUMMARY REPORT")
+print("=" * 60)
+
+print("🎯 NESTED CROSS-VALIDATION PIPELINE SUMMARY")
+print("=" * 60)
+
+print(f"\n📊 METHODOLOGY:")
+print(f"   • Outer CV: {OUTER_CV_FOLDS}-fold for unbiased performance estimation")
+print(f"   • Inner CV: {INNER_CV_FOLDS}-fold for hyperparameter tuning")
+print(f"   • Total model trainings: {OUTER_CV_FOLDS * INNER_CV_FOLDS * 10 * len(base_models):,}")
+print(f"   • Hyperparameter search: RandomizedSearchCV (10 iterations per inner fold)")
+
+print(f"\n🏆 RESULTS:")
+print(f"   • Best Model: {best_model_nested}")
+print(f"   • Unbiased R² Estimate: {best_r2_nested:.4f} ± {best_r2_std_nested:.4f}")
+print(f"   • 95% Confidence Interval: [{best_r2_nested - 1.96*best_r2_std_nested:.4f}, {best_r2_nested + 1.96*best_r2_std_nested:.4f}]")
+print(f"   • Test Set R²: {test_r2:.4f}")
+print(f"   • Test Set RMSE: ${test_rmse:.2f}")
+
+print(f"\n📈 PERFORMANCE ASSESSMENT:")
+if test_r2 >= 0.40:
+    performance_level = "EXCELLENT"
+    emoji = "🎉"
+elif test_r2 >= 0.35:
+    performance_level = "GOOD"
+    emoji = "✅"
+elif test_r2 >= 0.30:
+    performance_level = "ACCEPTABLE"
+    emoji = "👍"
+else:
+    performance_level = "NEEDS IMPROVEMENT"
+    emoji = "⚠️"
+
+print(f"   {emoji} Performance Level: {performance_level}")
+print(f"   • R² = {test_r2:.4f} {'✅' if test_r2 >= 0.35 else '⚠️'}")
+
+print(f"\n🔧 HYPERPARAMETER STABILITY:")
+# Check hyperparameter consistency
+best_params_list = nested_cv_results[best_model_nested]['best_params_per_fold']
+param_consistency = {}
+
+for param_name in best_params_final.keys():
+    param_values = [params.get(param_name) for params in best_params_list if param_name in params]
+    unique_values = len(set(param_values))
+    param_consistency[param_name] = unique_values
+
+stable_params = sum(1 for count in param_consistency.values() if count == 1)
+total_params = len(param_consistency)
+stability_pct = (stable_params / total_params) * 100
+
+print(f"   • Parameter Stability: {stable_params}/{total_params} parameters stable ({stability_pct:.1f}%)")
+if stability_pct >= 80:
+    print("   ✅ High hyperparameter stability (good model robustness)")
+elif stability_pct >= 60:
+    print("   👍 Moderate hyperparameter stability")
+else:
+    print("   ⚠️ Low hyperparameter stability (model sensitive to data splits)")
+
+print(f"\n💾 ARTIFACTS SAVED:")
+print(f"   • nested_cv_results.json - Complete nested CV results")
+print(f"   • nested_cv_comparison.csv - Model comparison table")
+print(f"   • nested_cv_final_model.pkl - Final trained model with artifacts")
+print(f"   • nested_cv_results_visualization.png - Performance visualizations")
+
+print(f"\n🎯 ADVANTAGES OF NESTED CV:")
+print(f"   ✅ Unbiased performance estimates (no data leakage)")
+print(f"   ✅ Robust model selection")
+print(f"   ✅ Confidence intervals for performance")
+print(f"   ✅ Hyperparameter stability analysis")
+print(f"   ✅ Better generalization assessment")
+
+print(f"\n🚀 NEXT STEPS:")
+print(f"   1. Deploy nested_cv_final_model.pkl to production")
+print(f"   2. Monitor model performance on new data")
+print(f"   3. Consider ensemble methods if multiple models perform similarly")
+print(f"   4. Plan model retraining schedule (quarterly/semi-annually)")
+
+print(f"\n✅ NESTED CROSS-VALIDATION PIPELINE COMPLETED SUCCESSFULLY!")
+print("=" * 80)
+
+# %%
+# SECTION 17: PRODUCTION MODEL TRAINING (OPTIONAL - USING ALL DATA)
+# =============================================================================
+print("\n🚀 PRODUCTION MODEL TRAINING (USING ALL AVAILABLE DATA)")
+print("=" * 70)
+print("Training final production model using ALL available data (train + validation + test)...")
+print("Using best hyperparameters from nested CV analysis.")
+
+# Combine ALL datasets for final production training (from original pipeline structure)
+print("\n📊 COMBINING ALL DATASETS FOR PRODUCTION TRAINING")
+print("-" * 60)
+
+# Combine train + validation + test for final production training
+final_train_df = pd.concat([
+    train_df_enhanced,
+    valid_df_enhanced,
+    test_df_enhanced
+], ignore_index=True)
+
+print(f"   📈 Original train set: {len(train_df_enhanced):,} samples")
+print(f"   📈 Original valid set: {len(valid_df_enhanced):,} samples")
+print(f"   📈 Original test set:  {len(test_df_enhanced):,} samples")
+print(f"   🎯 Final production training set: {len(final_train_df):,} samples")
+print(f"   📊 Data increase: +{len(final_train_df) - len(train_df_enhanced):,} samples ({((len(final_train_df) / len(train_df_enhanced)) - 1) * 100:.1f}% more data)")
+
+# Prepare final features and target
+X_final = final_train_df[feature_columns].copy()
+y_final = final_train_df[target_column].copy()
+
+print(f"\n   ✅ Final feature matrix: {X_final.shape}")
+print(f"   ✅ Final target vector: {y_final.shape}")
+
+# Apply scaling to final dataset
+print("\n⚖️ SCALING FINAL PRODUCTION DATASET")
+print("-" * 50)
+
+final_scaler = RobustScaler()
+X_final_scaled = pd.DataFrame(
+    final_scaler.fit_transform(X_final),
+    columns=X_final.columns,
+    index=X_final.index
+)
+print("   ✅ Final dataset scaled using RobustScaler")
+
+# Create production model dynamically based on nested CV winner
+print(f"\n🤖 CREATING PRODUCTION MODEL")
+print("-" * 40)
+
+# Create production model with exact hyperparameters from nested CV
+if 'XGB' in best_model_nested or 'XGBoost' in best_model_nested:
+    import xgboost as xgb
+    final_production_model = xgb.XGBRegressor(**best_params_final)
+    algorithm_name = "XGBoost"
+
+elif 'LGBM' in best_model_nested or 'LightGBM' in best_model_nested:
+    import lightgbm as lgb
+    final_production_model = lgb.LGBMRegressor(**best_params_final)
+    algorithm_name = "LightGBM"
+
+elif 'RandomForest' in best_model_nested or 'Forest' in best_model_nested:
+    from sklearn.ensemble import RandomForestRegressor
+    final_production_model = RandomForestRegressor(**best_params_final)
+    algorithm_name = "Random Forest"
+
+else:
+    # Generic fallback
+    final_production_model = base_models[best_model_nested].set_params(**best_params_final)
+    algorithm_name = best_model_nested
+
+print(f"   🎯 Model: {algorithm_name} (Winner from nested CV)")
+print(f"   📊 Training samples: {len(X_final_scaled):,}")
+print(f"   🔧 Features: {len(feature_columns)}")
+print(f"   📈 Expected RMSE: ${best_rmse_nested:.2f} ± ${best_rmse_std_nested:.2f}")
+
+# Train the final production model
+import time
+start_time = time.time()
+
+final_production_model.fit(X_final_scaled, y_final)
+
+training_time = time.time() - start_time
+print(f"   ⏱️ Training completed in {training_time:.2f} seconds")
+print("   ✅ Final production model training complete!")
+
+# Create comprehensive production artifacts (from original pipeline)
+print("\n💾 CREATING PRODUCTION ARTIFACTS")
+print("-" * 50)
+
+final_production_artifacts = {
+    # Core model components for production
+    'final_production_model': final_production_model,
+    'final_scaler': final_scaler,
+    'feature_columns': feature_columns,
+    'model_name': f'{algorithm_name}_Production_NestedCV',
+
+    # Training information
+    'training_info': {
+        'total_samples': len(final_train_df),
+        'feature_count': len(feature_columns),
+        'training_time_seconds': training_time,
+        'data_sources': 'Combined train + validation + test sets',
+        'training_date': datetime.now().isoformat(),
+        'algorithm': algorithm_name,
+        'cv_method': 'Nested Cross-Validation',
+        'winner_model_name': best_model_nested
+    },
+
+    # Model hyperparameters used
+    'hyperparameters': best_params_final,
+
+    # Nested CV performance estimates
+    'nested_cv_performance': {
+        'rmse_mean': best_rmse_nested,
+        'rmse_std': best_rmse_std_nested,
+        'mae_mean': best_mae_nested,
+        'mae_std': best_mae_std_nested,
+        'r2_mean': best_r2_nested,
+        'r2_std': best_r2_std_nested,
+        'note': 'Unbiased performance estimates from nested cross-validation'
+    },
+
+    # Test set validation
+    'test_validation': {
+        'test_rmse': test_rmse,
+        'test_mae': test_mae,
+        'test_r2': test_r2,
+        'note': 'Performance on held-out test set'
+    },
+
+    # Model metadata
+    'model_version': '1.0_PRODUCTION_NESTED_CV',
+    'is_production_ready': True,
+    'optimization_metric': 'RMSE'
+}
+
+# Save final production model
+final_model_path = data_path + '/final_production_model_nested_cv.pkl'
+joblib.dump(final_production_artifacts, final_model_path)
+
+print(f"   ✅ Production model saved: final_production_model_nested_cv.pkl")
+print(f"   📦 Package includes: model, scaler, features, hyperparameters, nested CV results")
+
+print(f"\n🎯 FINAL DEPLOYMENT SUMMARY:")
+print(f"   🏆 Best Model: {algorithm_name} (from nested CV)")
+print(f"   📊 Expected RMSE: ${best_rmse_nested:.2f} ± ${best_rmse_std_nested:.2f}")
+print(f"   📊 Test RMSE: ${test_rmse:.2f}")
+print(f"   🔧 Features: {len(feature_columns)} variables")
+print(f"   📈 Training data: {len(final_train_df):,} customers")
+
+print(f"\n🚀 DEPLOYMENT CHECKLIST:")
+print(f"   ✅ Model trained with nested CV (unbiased estimates)")
+print(f"   ✅ Hyperparameters optimized for RMSE")
+print(f"   ✅ Scaler fitted and saved")
+print(f"   ✅ Feature importance analyzed")
+print(f"   ✅ Production artifacts created")
+print(f"   ✅ Performance validated on test set")
+
+print(f"\n🎯 NEXT STEPS:")
+print(f"   1. Deploy final_production_model_nested_cv.pkl to production")
+print(f"   2. Monitor model performance on new customer data")
+print(f"   3. Expected prediction accuracy: RMSE ≈ ${best_rmse_nested:.0f}")
+print(f"   4. Plan model retraining schedule (quarterly/semi-annually)")
+
+print(f"\n✅ NESTED CV INCOME PREDICTION PIPELINE COMPLETE!")
+print("=" * 80)

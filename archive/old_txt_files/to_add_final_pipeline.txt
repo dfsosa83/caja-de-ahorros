@@ -1,0 +1,757 @@
+# Load the main dataset
+df_original = df_clientes_clean_final.copy()
+
+print(f"Original dataset shape: {df_original.shape}")
+
+# %%
+# SECTION 3: FEATURE SELECTION AND DATASET PREPARATION
+# =============================================================================
+print("\n🎯 PREPARING FEATURE SET")
+print("-" * 50)
+
+# Define columns to keep for modeling
+columns_to_keep = [
+    # ID columns
+    'cliente', 'identificador_unico',
+    
+    # Target variable
+    'ingresos_reportados',
+    
+    # Core features (already processed)
+    'edad', 'letras_mensuales', 'monto_letra', 'saldo','monto_prestamo',
+ 'tasa_prestamo',
+    'fechaingresoempleo', 'fecha_inicio', 'fecha_vencimiento',
+    'ocupacion_consolidated', 'ciudad_consolidated',
+    'nombreempleadorcliente_consolidated', 'cargoempleocliente_consolidated',
+    'sexo_consolidated', 'estado_civil_consolidated', 'pais_consolidated',
+    'missing_fechaingresoempleo', 'missing_nombreempleadorcliente', 'missing_cargoempleocliente',
+    'is_retired', 'age_group'
+]
+
+# Filter to existing columns
+existing_columns = [col for col in columns_to_keep if col in df_original.columns]
+df_working = df_original[existing_columns].copy()
+
+print(f"✅ Working dataset prepared: {df_working.shape}")
+print(f"   Features to process: {len(existing_columns) - 3}")  # Exclude IDs and target
+
+# %%
+# SECTION 4: DATA PREPROCESSING PIPELINE
+# =============================================================================
+print("\n🔧 DATA PREPROCESSING PIPELINE")
+print("-" * 50)
+
+def preprocess_data(df):
+    """
+    Complete data preprocessing pipeline
+    """
+    df_processed = df.copy()
+    
+    # 4.1: Handle Missing Values
+    print("   📋 Handling missing values...")
+    
+    # Core numerical missing values
+    if 'monto_letra' in df_processed.columns:
+        df_processed['monto_letra_missing'] = df_processed['monto_letra'].isnull().astype(int)
+        median_monto = df_processed['monto_letra'].median()
+        df_processed['monto_letra'] = df_processed['monto_letra'].fillna(median_monto)
+        print(f"      ✅ monto_letra: filled {df_processed['monto_letra_missing'].sum()} missing values")
+    
+    # New loan features (high missing rate - special handling)
+    if 'monto_prestamo' in df_processed.columns:
+        missing_count = df_processed['monto_prestamo'].isnull().sum()
+        missing_pct = (missing_count / len(df_processed)) * 100
+        
+        # Create missing flag (important feature!)
+        df_processed['monto_prestamo_missing'] = df_processed['monto_prestamo'].isnull().astype(int)
+        
+        # Fill with 0 (indicates no loan amount recorded)
+        df_processed['monto_prestamo'] = df_processed['monto_prestamo'].fillna(0)
+        print(f"      ✅ monto_prestamo: filled {missing_count:,} missing values ({missing_pct:.1f}%) with 0")
+    
+    if 'tasa_prestamo' in df_processed.columns:
+        missing_count = df_processed['tasa_prestamo'].isnull().sum()
+        missing_pct = (missing_count / len(df_processed)) * 100
+        
+        # Create missing flag (important feature!)
+        df_processed['tasa_prestamo_missing'] = df_processed['tasa_prestamo'].isnull().astype(int)
+        
+        # Fill with median of available rates (more meaningful than 0)
+        median_rate = df_processed['tasa_prestamo'].median()
+        df_processed['tasa_prestamo'] = df_processed['tasa_prestamo'].fillna(median_rate)
+        print(f"      ✅ tasa_prestamo: filled {missing_count:,} missing values ({missing_pct:.1f}%) with median ({median_rate:.2f})")
+    
+    # Create derived features from new loan data
+    if 'monto_prestamo' in df_processed.columns and 'monto_letra' in df_processed.columns:
+        # Loan to payment ratio (when both available)
+        df_processed['loan_to_payment_ratio'] = df_processed['monto_prestamo'] / (df_processed['monto_letra'] + 1)
+        print(f"      ✅ Created loan_to_payment_ratio feature")
+    
+    if 'monto_prestamo' in df_processed.columns:
+        # Has loan indicator (binary feature)
+        df_processed['has_loan_amount'] = (df_processed['monto_prestamo'] > 0).astype(int)
+        print(f"      ✅ Created has_loan_amount indicator")
+    
+    # 4.2: Convert Date Features
+    print("   📅 Converting date features...")
+    reference_date = pd.Timestamp('2020-01-01')
+    date_columns = ['fechaingresoempleo', 'fecha_inicio', 'fecha_vencimiento']
+    
+    for date_col in date_columns:
+        if date_col in df_processed.columns:
+            # Convert to datetime
+            df_processed[date_col] = pd.to_datetime(df_processed[date_col], errors='coerce')
+            
+            # Convert to days since reference
+            df_processed[f'{date_col}_days'] = (df_processed[date_col] - reference_date).dt.days
+            
+            # Handle missing values
+            missing_count = df_processed[f'{date_col}_days'].isnull().sum()
+            if missing_count > 0:
+                df_processed[f'{date_col}_missing'] = df_processed[f'{date_col}_days'].isnull().astype(int)
+                median_days = df_processed[f'{date_col}_days'].median()
+                df_processed[f'{date_col}_days'] = df_processed[f'{date_col}_days'].fillna(median_days)
+                print(f"      ✅ {date_col}: converted to days, filled {missing_count} missing")
+            
+            # Drop original date column
+            df_processed.drop(columns=[date_col], inplace=True)
+    
+    # 4.3: Encode Categorical Features
+    print("   🏷️  Encoding categorical features...")
+    
+    # Low cardinality - One-hot encoding
+    low_cardinality = ['sexo_consolidated', 'estado_civil_consolidated', 'pais_consolidated', 'age_group']
+    existing_low_card = [col for col in low_cardinality if col in df_processed.columns]
+    
+    for col in existing_low_card:
+        df_processed[col] = df_processed[col].fillna('Unknown')
+        dummies = pd.get_dummies(df_processed[col], prefix=col, drop_first=True)
+        df_processed = pd.concat([df_processed, dummies], axis=1)
+        df_processed.drop(columns=[col], inplace=True)
+        print(f"      ✅ {col}: created {len(dummies.columns)} dummy variables")
+    
+    # High cardinality - Frequency encoding
+    high_cardinality = ['ocupacion_consolidated', 'ciudad_consolidated',
+                       'nombreempleadorcliente_consolidated', 'cargoempleocliente_consolidated']
+    existing_high_card = [col for col in high_cardinality if col in df_processed.columns]
+    
+    for col in existing_high_card:
+        df_processed[col] = df_processed[col].fillna('Unknown')
+        freq_map = df_processed[col].value_counts().to_dict()
+        new_col_name = f'{col}_freq'
+        df_processed[new_col_name] = df_processed[col].map(freq_map)
+        df_processed.drop(columns=[col], inplace=True)
+        print(f"      ✅ {col}: frequency encoded (range: {df_processed[new_col_name].min()}-{df_processed[new_col_name].max()})")
+    
+    return df_processed
+
+# Apply preprocessing
+df_processed = preprocess_data(df_working)
+print(f"\n✅ Preprocessing complete: {df_processed.shape}")
+
+# %%
+# SECTION 5: ENHANCED FEATURE ENGINEERING WITH NEW LOAN FEATURES (DTYPE FIXED)
+# =============================================================================
+print("\n⚙️ ENHANCED FEATURE ENGINEERING SETUP (WITH LOAN FEATURES)")
+print("-" * 60)
+
+# =============================================================================
+# PREPROCESSING FUNCTION WITH PROPER DTYPE HANDLING
+# =============================================================================
+
+def preprocess_data_fixed(df):
+    """
+    Complete data preprocessing pipeline with proper dtype handling
+    """
+    df_processed = df.copy()
+
+    # 4.1: Handle Missing Values
+    print("   📋 Handling missing values...")
+
+    # Core numerical missing values
+    if 'monto_letra' in df_processed.columns:
+        df_processed['monto_letra_missing'] = df_processed['monto_letra'].isnull().astype('int32')
+        median_monto = df_processed['monto_letra'].median()
+        df_processed['monto_letra'] = df_processed['monto_letra'].fillna(median_monto).astype('float32')
+        print(f"      ✅ monto_letra: filled {df_processed['monto_letra_missing'].sum()} missing values")
+
+    # New loan features (high missing rate - special handling)
+    if 'monto_prestamo' in df_processed.columns:
+        missing_count = df_processed['monto_prestamo'].isnull().sum()
+        missing_pct = (missing_count / len(df_processed)) * 100
+
+        # Create missing flag (important feature!)
+        df_processed['monto_prestamo_missing'] = df_processed['monto_prestamo'].isnull().astype('int32')
+
+        # Fill with 0 (indicates no loan amount recorded)
+        df_processed['monto_prestamo'] = df_processed['monto_prestamo'].fillna(0).astype('float32')
+        print(f"      ✅ monto_prestamo: filled {missing_count:,} missing values ({missing_pct:.1f}%) with 0")
+
+    if 'tasa_prestamo' in df_processed.columns:
+        missing_count = df_processed['tasa_prestamo'].isnull().sum()
+        missing_pct = (missing_count / len(df_processed)) * 100
+
+        # Create missing flag (important feature!)
+        df_processed['tasa_prestamo_missing'] = df_processed['tasa_prestamo'].isnull().astype('int32')
+
+        # Fill with median of available rates (more meaningful than 0)
+        median_rate = df_processed['tasa_prestamo'].median()
+        df_processed['tasa_prestamo'] = df_processed['tasa_prestamo'].fillna(median_rate).astype('float32')
+        print(f"      ✅ tasa_prestamo: filled {missing_count:,} missing values ({missing_pct:.1f}%) with median ({median_rate:.2f})")
+
+    # Create derived features from new loan data
+    if 'monto_prestamo' in df_processed.columns and 'monto_letra' in df_processed.columns:
+        # Loan to payment ratio (when both available)
+        df_processed['loan_to_payment_ratio'] = (df_processed['monto_prestamo'] / (df_processed['monto_letra'] + 1)).astype('float32')
+        print(f"      ✅ Created loan_to_payment_ratio feature")
+
+    if 'monto_prestamo' in df_processed.columns:
+        # Has loan indicator (binary feature)
+        df_processed['has_loan_amount'] = (df_processed['monto_prestamo'] > 0).astype('int32')
+        print(f"      ✅ Created has_loan_amount indicator")
+
+    # 4.2: Convert Date Features
+    print("   📅 Converting date features...")
+    reference_date = pd.Timestamp('2020-01-01')
+    date_columns = ['fechaingresoempleo', 'fecha_inicio', 'fecha_vencimiento']
+
+    for date_col in date_columns:
+        if date_col in df_processed.columns:
+            # Convert to datetime
+            df_processed[date_col] = pd.to_datetime(df_processed[date_col], errors='coerce')
+
+            # Convert to days since reference
+            df_processed[f'{date_col}_days'] = ((df_processed[date_col] - reference_date).dt.days).astype('float32')
+
+            # Handle missing values
+            missing_count = df_processed[f'{date_col}_days'].isnull().sum()
+            if missing_count > 0:
+                df_processed[f'{date_col}_missing'] = df_processed[f'{date_col}_days'].isnull().astype('int32')
+                median_days = df_processed[f'{date_col}_days'].median()
+                df_processed[f'{date_col}_days'] = df_processed[f'{date_col}_days'].fillna(median_days).astype('float32')
+                print(f"      ✅ {date_col}: converted to days, filled {missing_count} missing")
+
+            # Drop original date column
+            df_processed.drop(columns=[date_col], inplace=True)
+
+    # 4.3: Encode Categorical Features (FIXED VERSION)
+    print("   🏷️  Encoding categorical features with proper dtypes...")
+
+    # Low cardinality - One-hot encoding with proper dtypes
+    low_cardinality = ['sexo_consolidated', 'estado_civil_consolidated', 'pais_consolidated', 'age_group']
+    existing_low_card = [col for col in low_cardinality if col in df_processed.columns]
+
+    for col in existing_low_card:
+        df_processed[col] = df_processed[col].fillna('Unknown')
+
+        # KEY FIX: Add dtype=int parameter and explicit conversion
+        dummies = pd.get_dummies(df_processed[col], prefix=col, drop_first=True, dtype='int32')
+
+        # Double-check conversion to int32
+        for dummy_col in dummies.columns:
+            dummies[dummy_col] = dummies[dummy_col].astype('int32')
+
+        df_processed = pd.concat([df_processed, dummies], axis=1)
+        df_processed.drop(columns=[col], inplace=True)
+        print(f"      ✅ {col}: created {len(dummies.columns)} dummy variables (int32)")
+
+    # High cardinality - Frequency encoding
+    high_cardinality = ['ocupacion_consolidated', 'ciudad_consolidated',
+                       'nombreempleadorcliente_consolidated', 'cargoempleocliente_consolidated']
+    existing_high_card = [col for col in high_cardinality if col in df_processed.columns]
+
+    for col in existing_high_card:
+        df_processed[col] = df_processed[col].fillna('Unknown')
+        freq_map = df_processed[col].value_counts().to_dict()
+        new_col_name = f'{col}_freq'
+        df_processed[new_col_name] = df_processed[col].map(freq_map).astype('int32')
+        df_processed.drop(columns=[col], inplace=True)
+        print(f"      ✅ {col}: frequency encoded (range: {df_processed[new_col_name].min()}-{df_processed[new_col_name].max()})")
+
+    return df_processed
+
+def create_interaction_features(df):
+    """
+    Create advanced interaction features for enhanced model performance
+    Focus on interpretable, business-meaningful features
+    ENHANCED VERSION: Includes new loan features (monto_prestamo, tasa_prestamo)
+    DTYPE FIXED: All features are ML-compatible (int32/float32)
+    """
+    df_enhanced = df.copy()
+
+    print(f"   🔧 Creating interaction features for dataset: {df.shape}")
+
+    # Get age group columns
+    age_columns = [col for col in df.columns if col.startswith('age_group_')]
+    
+    # =============================================================================
+    # NEW SECTION: LOAN-SPECIFIC FEATURE ENGINEERING
+    # =============================================================================
+    print("   💳 Creating loan-specific features...")
+    
+    # 1. LOAN AMOUNT FEATURES
+    if 'monto_prestamo' in df.columns:
+        # Loan amount categories
+        loan_25th = df_enhanced['monto_prestamo'].quantile(0.25)
+        loan_50th = df_enhanced['monto_prestamo'].quantile(0.50)
+        loan_75th = df_enhanced['monto_prestamo'].quantile(0.75)
+        loan_90th = df_enhanced['monto_prestamo'].quantile(0.90)
+
+        df_enhanced['small_loan'] = ((df_enhanced['monto_prestamo'] > 0) &
+                                   (df_enhanced['monto_prestamo'] <= loan_25th)).astype('int32')
+        df_enhanced['medium_loan'] = ((df_enhanced['monto_prestamo'] > loan_25th) &
+                                    (df_enhanced['monto_prestamo'] <= loan_75th)).astype('int32')
+        df_enhanced['large_loan'] = ((df_enhanced['monto_prestamo'] > loan_75th) &
+                                   (df_enhanced['monto_prestamo'] <= loan_90th)).astype('int32')
+        df_enhanced['jumbo_loan'] = (df_enhanced['monto_prestamo'] > loan_90th).astype('int32')
+
+        # Loan amount per age (loan capacity indicator)
+        if 'edad' in df.columns:
+            df_enhanced['loan_per_age'] = (df_enhanced['monto_prestamo'] / (df_enhanced['edad'] + 1)).astype('float32')
+            df_enhanced['high_loan_capacity'] = (df_enhanced['loan_per_age'] >=
+                                               df_enhanced['loan_per_age'].quantile(0.8)).astype('int32')
+
+        print(f"      ✅ Created loan amount category and capacity features")
+    
+    # 2. INTEREST RATE FEATURES
+    if 'tasa_prestamo' in df.columns:
+        # Interest rate categories
+        rate_25th = df_enhanced['tasa_prestamo'].quantile(0.25)
+        rate_75th = df_enhanced['tasa_prestamo'].quantile(0.75)
+
+        df_enhanced['low_interest_rate'] = (df_enhanced['tasa_prestamo'] <= rate_25th).astype('int32')
+        df_enhanced['high_interest_rate'] = (df_enhanced['tasa_prestamo'] >= rate_75th).astype('int32')
+        df_enhanced['medium_interest_rate'] = ((df_enhanced['tasa_prestamo'] > rate_25th) &
+                                             (df_enhanced['tasa_prestamo'] < rate_75th)).astype('int32')
+
+        # Interest rate risk categories
+        df_enhanced['premium_rate'] = (df_enhanced['tasa_prestamo'] <= 2.0).astype('int32')  # Very low rate
+        df_enhanced['standard_rate'] = ((df_enhanced['tasa_prestamo'] > 2.0) &
+                                      (df_enhanced['tasa_prestamo'] <= 5.0)).astype('int32')
+        df_enhanced['high_risk_rate'] = (df_enhanced['tasa_prestamo'] > 5.0).astype('int32')
+
+        print(f"      ✅ Created interest rate category and risk features")
+    
+    # 3. LOAN-TO-PAYMENT RELATIONSHIPS
+    if 'monto_prestamo' in df.columns and 'monto_letra' in df.columns:
+        # Loan to monthly payment ratio (loan term indicator)
+        df_enhanced['loan_to_payment_ratio'] = (df_enhanced['monto_prestamo'] / (df_enhanced['monto_letra'] + 1)).astype('float32')
+
+        # Loan term categories (based on ratio)
+        term_33rd = df_enhanced['loan_to_payment_ratio'].quantile(0.33)
+        term_66th = df_enhanced['loan_to_payment_ratio'].quantile(0.66)
+
+        df_enhanced['short_term_loan'] = (df_enhanced['loan_to_payment_ratio'] <= term_33rd).astype('int32')
+        df_enhanced['medium_term_loan'] = ((df_enhanced['loan_to_payment_ratio'] > term_33rd) &
+                                         (df_enhanced['loan_to_payment_ratio'] <= term_66th)).astype('int32')
+        df_enhanced['long_term_loan'] = (df_enhanced['loan_to_payment_ratio'] > term_66th).astype('int32')
+
+        # Payment burden from loan
+        df_enhanced['loan_payment_burden'] = (df_enhanced['monto_letra'] / (df_enhanced['monto_prestamo'] + 1)).astype('float32')
+        df_enhanced['high_loan_burden'] = (df_enhanced['loan_payment_burden'] >=
+                                         df_enhanced['loan_payment_burden'].quantile(0.8)).astype('int32')
+
+        print(f"      ✅ Created loan-payment relationship features")
+    
+    # 4. LOAN-BALANCE INTERACTIONS
+    if 'monto_prestamo' in df.columns and 'saldo' in df.columns:
+        # Loan to balance ratio (leverage indicator)
+        df_enhanced['loan_to_balance_ratio'] = df_enhanced['monto_prestamo'] / (df_enhanced['saldo'] + 1)
+        
+        # Financial leverage categories
+        leverage_50th = df_enhanced['loan_to_balance_ratio'].quantile(0.50)
+        leverage_80th = df_enhanced['loan_to_balance_ratio'].quantile(0.80)
+        
+        df_enhanced['conservative_leverage'] = (df_enhanced['loan_to_balance_ratio'] <= leverage_50th).astype(int)
+        df_enhanced['moderate_leverage'] = ((df_enhanced['loan_to_balance_ratio'] > leverage_50th) & 
+                                          (df_enhanced['loan_to_balance_ratio'] <= leverage_80th)).astype(int)
+        df_enhanced['high_leverage'] = (df_enhanced['loan_to_balance_ratio'] > leverage_80th).astype(int)
+        
+        # Balance coverage (can balance cover loan?)
+        df_enhanced['balance_covers_loan'] = (df_enhanced['saldo'] >= df_enhanced['monto_prestamo']).astype(int)
+        df_enhanced['balance_coverage_ratio'] = df_enhanced['saldo'] / (df_enhanced['monto_prestamo'] + 1)
+        
+        print(f"      ✅ Created loan-balance interaction features")
+    
+    # 5. LOAN MISSING VALUE PATTERNS
+    if 'monto_prestamo_missing' in df.columns and 'tasa_prestamo_missing' in df.columns:
+        # Loan data completeness patterns
+        df_enhanced['complete_loan_data'] = ((df_enhanced['monto_prestamo_missing'] == 0) &
+                                           (df_enhanced['tasa_prestamo_missing'] == 0)).astype('int32')
+        df_enhanced['partial_loan_data'] = ((df_enhanced['monto_prestamo_missing'] == 0) |
+                                          (df_enhanced['tasa_prestamo_missing'] == 0)).astype('int32')
+        df_enhanced['no_loan_data'] = ((df_enhanced['monto_prestamo_missing'] == 1) &
+                                     (df_enhanced['tasa_prestamo_missing'] == 1)).astype('int32')
+
+        # Loan data quality score
+        df_enhanced['loan_data_quality'] = (2 - df_enhanced['monto_prestamo_missing'] -
+                                          df_enhanced['tasa_prestamo_missing']).astype('int32')
+
+        print(f"      ✅ Created loan data completeness features")
+    
+    # 6. LOAN-DEMOGRAPHIC INTERACTIONS
+    if 'monto_prestamo' in df.columns and 'edad' in df.columns:
+        # Age-based loan patterns
+        df_enhanced['young_borrower'] = ((df_enhanced['edad'] <= 35) & 
+                                       (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        df_enhanced['mature_borrower'] = ((df_enhanced['edad'] > 35) & (df_enhanced['edad'] <= 55) & 
+                                        (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        df_enhanced['senior_borrower'] = ((df_enhanced['edad'] > 55) & 
+                                        (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        
+        # Loan size relative to age
+        if 'large_loan' in df_enhanced.columns:
+            df_enhanced['young_large_borrower'] = (df_enhanced['young_borrower'] & 
+                                                 df_enhanced['large_loan']).astype(int)
+            df_enhanced['senior_large_borrower'] = (df_enhanced['senior_borrower'] & 
+                                                  df_enhanced['large_loan']).astype(int)
+        
+        print(f"      ✅ Created loan-demographic interaction features")
+    
+    # 7. LOAN-OCCUPATION INTERACTIONS
+    if 'monto_prestamo' in df.columns and 'ocupacion_consolidated_freq' in df.columns:
+        # Professional borrowing patterns
+        occ_75th = df_enhanced['ocupacion_consolidated_freq'].quantile(0.75)
+        
+        df_enhanced['professional_borrower'] = ((df_enhanced['ocupacion_consolidated_freq'] >= occ_75th) & 
+                                              (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        
+        # Loan amount relative to occupation frequency
+        df_enhanced['loan_per_occupation_freq'] = (df_enhanced['monto_prestamo'] / 
+                                                 (df_enhanced['ocupacion_consolidated_freq'] + 1))
+        
+        if 'large_loan' in df_enhanced.columns:
+            df_enhanced['professional_large_loan'] = (df_enhanced['professional_borrower'] & 
+                                                    df_enhanced['large_loan']).astype(int)
+        
+        print(f"      ✅ Created loan-occupation interaction features")
+    
+    # 8. CREDIT RISK INDICATORS (LOAN-BASED)
+    if ('monto_prestamo' in df.columns and 'tasa_prestamo' in df.columns and 
+        'monto_letra' in df.columns):
+        
+        # High-risk loan profile
+        df_enhanced['high_risk_loan_profile'] = (
+            (df_enhanced['high_interest_rate'] == 1) & 
+            (df_enhanced['high_loan_burden'] == 1)
+        ).astype(int)
+        
+        # Low-risk loan profile
+        df_enhanced['low_risk_loan_profile'] = (
+            (df_enhanced['low_interest_rate'] == 1) & 
+            (df_enhanced['conservative_leverage'] == 1)
+        ).astype(int)
+        
+        # Premium borrower (low rate + large loan)
+        if 'large_loan' in df_enhanced.columns:
+            df_enhanced['premium_borrower'] = (
+                (df_enhanced['premium_rate'] == 1) & 
+                (df_enhanced['large_loan'] == 1)
+            ).astype(int)
+        
+        print(f"      ✅ Created credit risk indicator features")
+    
+    # 9. LOAN SOPHISTICATION SCORE
+    if ('monto_prestamo' in df.columns and 'tasa_prestamo' in df.columns and 
+        'saldo' in df.columns):
+        
+        # Financial sophistication based on loan management
+        sophistication_components = []
+        
+        if 'balance_covers_loan' in df_enhanced.columns:
+            sophistication_components.append('balance_covers_loan')
+        if 'low_interest_rate' in df_enhanced.columns:
+            sophistication_components.append('low_interest_rate')
+        if 'conservative_leverage' in df_enhanced.columns:
+            sophistication_components.append('conservative_leverage')
+        
+        if len(sophistication_components) >= 2:
+            df_enhanced['loan_sophistication_score'] = df_enhanced[sophistication_components].sum(axis=1)
+            df_enhanced['sophisticated_borrower'] = (
+                df_enhanced['loan_sophistication_score'] >= len(sophistication_components) * 0.67
+            ).astype(int)
+            
+            print(f"      ✅ Created loan sophistication features")
+    
+    # =============================================================================
+    # EXISTING FEATURE ENGINEERING (ENHANCED WITH LOAN INTERACTIONS)
+    # =============================================================================
+    
+    # 1. AGE-OCCUPATION INTERACTIONS (Enhanced with loan data)
+    if 'ocupacion_consolidated_freq' in df.columns and age_columns:
+        for age_col in age_columns:
+            interaction_name = f"{age_col}_x_occupation"
+            df_enhanced[interaction_name] = (df_enhanced[age_col] * df_enhanced['ocupacion_consolidated_freq'])
+            
+            # Add loan interaction if available
+            if 'monto_prestamo' in df.columns:
+                loan_interaction_name = f"{age_col}_x_occupation_x_loan"
+                df_enhanced[loan_interaction_name] = (df_enhanced[interaction_name] * 
+                                                    (df_enhanced['monto_prestamo'] > 0).astype(int))
+        
+        print(f"      ✅ Created {len(age_columns)} age-occupation interactions (with loan variants)")
+    
+    # 2. LOCATION-OCCUPATION INTERACTION (Enhanced)
+    if ('ciudad_consolidated_freq' in df.columns and 'ocupacion_consolidated_freq' in df.columns):
+        df_enhanced['location_x_occupation'] = (df_enhanced['ciudad_consolidated_freq'] * 
+                                              df_enhanced['ocupacion_consolidated_freq'])
+        
+        # Add loan interaction
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['location_x_occupation_x_loan'] = (df_enhanced['location_x_occupation'] * 
+                                                         (df_enhanced['monto_prestamo'] > 0).astype(int))
+        
+        print(f"      ✅ Created location-occupation interaction (with loan variant)")
+    
+    # 3. FINANCIAL BEHAVIOR FEATURES (Enhanced with loan data)
+    print("   💰 Creating enhanced financial behavior features...")
+    
+    # Payment burden relative to age (enhanced with loan data)
+    if 'monto_letra' in df.columns and 'edad' in df.columns:
+        df_enhanced['payment_per_age'] = df_enhanced['monto_letra'] / (df_enhanced['edad'] + 1)
+        
+        # Enhanced with loan information
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['total_debt_per_age'] = (df_enhanced['monto_letra'] + 
+                                               df_enhanced['monto_prestamo'] * 0.1) / (df_enhanced['edad'] + 1)
+        
+        # High payment burden indicator
+        payment_75th = df_enhanced['monto_letra'].quantile(0.75)
+        df_enhanced['high_payment_burden'] = (df_enhanced['monto_letra'] >= payment_75th).astype(int)
+        print(f"      ✅ Created enhanced payment burden features")
+    
+    # 4. ACCOUNT BALANCE FEATURES (Enhanced with loan data)
+    if 'saldo' in df.columns:
+        # Balance categories
+        saldo_25th = df_enhanced['saldo'].quantile(0.25)
+        saldo_75th = df_enhanced['saldo'].quantile(0.75)
+
+        df_enhanced['low_balance'] = (df_enhanced['saldo'] <= saldo_25th).astype(int)
+        df_enhanced['high_balance'] = (df_enhanced['saldo'] >= saldo_75th).astype(int)
+        df_enhanced['medium_balance'] = ((df_enhanced['saldo'] > saldo_25th) &
+                                       (df_enhanced['saldo'] < saldo_75th)).astype(int)
+
+        # Balance-to-payment ratio
+        if 'monto_letra' in df.columns:
+            df_enhanced['balance_to_payment_ratio'] = df_enhanced['saldo'] / (df_enhanced['monto_letra'] + 1)
+            df_enhanced['high_liquidity'] = (df_enhanced['balance_to_payment_ratio'] >= 100).astype(int)
+
+        print(f"      ✅ Created enhanced balance and liquidity features")
+
+    # 5. EMPLOYMENT STABILITY FEATURES (Enhanced with loan interactions)
+    print("   🏢 Creating enhanced employment stability features...")
+
+    if 'fechaingresoempleo_days' in df.columns:
+        # Employment tenure categories
+        tenure_25th = df_enhanced['fechaingresoempleo_days'].quantile(0.25)
+        tenure_75th = df_enhanced['fechaingresoempleo_days'].quantile(0.75)
+
+        df_enhanced['short_tenure'] = (df_enhanced['fechaingresoempleo_days'] >= tenure_75th).astype(int)
+        df_enhanced['long_tenure'] = (df_enhanced['fechaingresoempleo_days'] <= tenure_25th).astype(int)
+        df_enhanced['medium_tenure'] = ((df_enhanced['fechaingresoempleo_days'] > tenure_25th) &
+                                      (df_enhanced['fechaingresoempleo_days'] < tenure_75th)).astype(int)
+
+        # Years of employment
+        df_enhanced['employment_years'] = abs(df_enhanced['fechaingresoempleo_days']) / 365.25
+        df_enhanced['veteran_employee'] = (df_enhanced['employment_years'] >= 10).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['stable_borrower'] = ((df_enhanced['long_tenure'] == 1) &
+                                            (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+        print(f"      ✅ Created enhanced employment stability features")
+
+    # 6. PROFESSIONAL STABILITY SCORE (Enhanced)
+    if ('ocupacion_consolidated_freq' in df.columns and
+        'nombreempleadorcliente_consolidated_freq' in df.columns and
+        'cargoempleocliente_consolidated_freq' in df.columns):
+
+        # Professional stability score
+        occ_norm = df_enhanced['ocupacion_consolidated_freq'] / df_enhanced['ocupacion_consolidated_freq'].max()
+        emp_norm = df_enhanced['nombreempleadorcliente_consolidated_freq'] / df_enhanced['nombreempleadorcliente_consolidated_freq'].max()
+        pos_norm = df_enhanced['cargoempleocliente_consolidated_freq'] / df_enhanced['cargoempleocliente_consolidated_freq'].max()
+
+        df_enhanced['professional_stability_score'] = (occ_norm + emp_norm + pos_norm) / 3
+        df_enhanced['high_professional_stability'] = (df_enhanced['professional_stability_score'] >= 0.7).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['stable_professional_borrower'] = ((df_enhanced['high_professional_stability'] == 1) &
+                                                         (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+        print(f"      ✅ Created enhanced professional stability features")
+
+    # 7. RISK PROFILE FEATURES (Enhanced with loan risk)
+    print("   ⚠️ Creating enhanced risk profile features...")
+
+    # Age-based risk categories
+    if 'edad' in df.columns:
+        df_enhanced['young_adult'] = ((df_enhanced['edad'] >= 18) & (df_enhanced['edad'] <= 30)).astype(int)
+        df_enhanced['prime_age'] = ((df_enhanced['edad'] > 30) & (df_enhanced['edad'] <= 50)).astype(int)
+        df_enhanced['senior'] = (df_enhanced['edad'] > 50).astype(int)
+
+    # Combined risk indicators (enhanced with loan risk)
+    risk_features = []
+    if 'is_retired' in df.columns:
+        risk_features.append('is_retired')
+    if 'high_payment_burden' in df_enhanced.columns:
+        risk_features.append('high_payment_burden')
+    if 'low_balance' in df_enhanced.columns:
+        risk_features.append('low_balance')
+    if 'short_tenure' in df_enhanced.columns:
+        risk_features.append('short_tenure')
+    if 'high_risk_loan_profile' in df_enhanced.columns:
+        risk_features.append('high_risk_loan_profile')
+
+    if len(risk_features) >= 2:
+        df_enhanced['risk_score'] = df_enhanced[risk_features].sum(axis=1)
+        df_enhanced['high_risk_profile'] = (df_enhanced['risk_score'] >= 2).astype(int)
+        df_enhanced['low_risk_profile'] = (df_enhanced['risk_score'] == 0).astype(int)
+        print(f"      ✅ Created enhanced risk profile features")
+
+    # 8. TEMPORAL FEATURES (Enhanced)
+    print("   📅 Creating enhanced temporal features...")
+
+    if 'fecha_inicio_days' in df.columns and 'fecha_vencimiento_days' in df.columns:
+        df_enhanced['contract_duration'] = df_enhanced['fecha_vencimiento_days'] - df_enhanced['fecha_inicio_days']
+        df_enhanced['contract_maturity_years'] = df_enhanced['contract_duration'] / 365.25
+        df_enhanced['long_term_contract'] = (df_enhanced['contract_maturity_years'] >= 10).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['long_term_borrower'] = ((df_enhanced['long_term_contract'] == 1) &
+                                               (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+        print(f"      ✅ Created enhanced temporal features")
+
+    # 9. HIGH EARNER POTENTIAL INDICATORS (Enhanced with loan data)
+    print("   💰 Creating enhanced high earner potential indicators...")
+
+    if ('edad' in df_enhanced.columns and
+        'ocupacion_consolidated_freq' in df_enhanced.columns and
+        'ciudad_consolidated_freq' in df_enhanced.columns):
+
+        # Define thresholds
+        occupation_80th = df_enhanced['ocupacion_consolidated_freq'].quantile(0.8)
+        city_70th = df_enhanced['ciudad_consolidated_freq'].quantile(0.7)
+
+        # High earner potential indicators
+        df_enhanced['high_earner_potential'] = (
+            (df_enhanced['edad'] >= 35) &
+            (df_enhanced['ocupacion_consolidated_freq'] >= occupation_80th) &
+            (df_enhanced['ciudad_consolidated_freq'] >= city_70th)
+        ).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['high_earner_borrower'] = ((df_enhanced['high_earner_potential'] == 1) &
+                                                 (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+            if 'premium_borrower' in df_enhanced.columns:
+                df_enhanced['elite_borrower'] = ((df_enhanced['high_earner_potential'] == 1) &
+                                               (df_enhanced['premium_borrower'] == 1)).astype(int)
+
+        print(f"      ✅ Created enhanced high earner potential indicators")
+
+    # =============================================================================
+    # FINAL DTYPE CLEANUP FOR ML COMPATIBILITY
+    # =============================================================================
+    print("   🔧 Final dtype cleanup for ML compatibility...")
+
+    # Define columns to exclude from dtype conversion
+    exclude_cols = ['cliente', 'identificador_unico', 'data_source', 'processing_timestamp']
+    feature_cols = [col for col in df_enhanced.columns if col not in exclude_cols]
+
+    # Convert boolean columns to int32
+    bool_cols = df_enhanced.select_dtypes(include=['bool']).columns
+    bool_feature_cols = [col for col in bool_cols if col in feature_cols]
+    for col in bool_feature_cols:
+        df_enhanced[col] = df_enhanced[col].astype('int32')
+        print(f"      ✅ Converted {col}: bool → int32")
+
+    # Convert object columns to numeric (for dummy variables that might be object)
+    object_cols = df_enhanced.select_dtypes(include=['object']).columns
+    object_feature_cols = [col for col in object_cols if col in feature_cols]
+    for col in object_feature_cols:
+        try:
+            # Check if it's a dummy variable (contains only 0, 1, or NaN)
+            unique_vals = df_enhanced[col].dropna().unique()
+            if len(unique_vals) <= 2 and all(str(val).strip() in ['0', '1', '0.0', '1.0', 'True', 'False'] for val in unique_vals):
+                df_enhanced[col] = pd.to_numeric(df_enhanced[col], errors='coerce').fillna(0).astype('int32')
+                print(f"      ✅ Converted {col}: object → int32 (dummy variable)")
+            else:
+                # Try general numeric conversion
+                df_enhanced[col] = pd.to_numeric(df_enhanced[col], errors='coerce').fillna(0).astype('float32')
+                print(f"      ✅ Converted {col}: object → float32")
+        except Exception as e:
+            print(f"      ⚠️  Could not convert {col}: {e}")
+
+    # Optimize numeric dtypes
+    int_cols = df_enhanced.select_dtypes(include=['int64']).columns
+    int_feature_cols = [col for col in int_cols if col in feature_cols]
+    for col in int_feature_cols:
+        df_enhanced[col] = df_enhanced[col].astype('int32')
+
+    float_cols = df_enhanced.select_dtypes(include=['float64']).columns
+    float_feature_cols = [col for col in float_cols if col in feature_cols]
+    for col in float_feature_cols:
+        df_enhanced[col] = df_enhanced[col].astype('float32')
+
+    # Final validation
+    remaining_objects = df_enhanced.select_dtypes(include=['object']).columns
+    remaining_feature_objects = [col for col in remaining_objects if col in feature_cols]
+
+    if remaining_feature_objects:
+        print(f"      ⚠️  Warning: {len(remaining_feature_objects)} feature columns still object dtype:")
+        for col in remaining_feature_objects[:5]:  # Show first 5
+            print(f"         - {col}: {df_enhanced[col].unique()[:3]}")
+    else:
+        print(f"      ✅ All feature columns are now ML-compatible!")
+
+    # Show final dtype summary
+    dtype_summary = df_enhanced[feature_cols].dtypes.value_counts()
+    print(f"      📊 Final feature dtypes: {dict(dtype_summary)}")
+
+    new_features = [col for col in df_enhanced.columns if col not in df.columns]
+    print(f"   ✨ Enhanced feature engineering complete: +{len(new_features)} new features")
+    print(f"   📊 Final dataset shape: {df_enhanced.shape}")
+
+    return df_enhanced
+
+print("✅ Enhanced feature engineering function ready (with comprehensive loan features + dtype fixes)")
+
+# %%
+# SECTION 8: FEATURE ENGINEERING APPLICATION
+# =============================================================================
+print("\n⚙️ APPLYING FEATURE ENGINEERING")
+print("-" * 50)
+
+# Apply feature engineering to all datasets
+train_df_enhanced_0 = create_interaction_features(train_df_clean)
+valid_df_enhanced = create_interaction_features(valid_df_clean)
+test_df_enhanced = create_interaction_features(test_df_clean)
+
+print(f"\n🎯 ENHANCED DATASET SHAPES:")
+print(f"   Training: {train_df_enhanced_0.shape}")
+print(f"   Validation: {valid_df_enhanced.shape}")
+print(f"   Test: {test_df_enhanced.shape}")
+
+## FINAL DESIRED FEATURES:
+['ocupacion_consolidated_freq',
+ 'nombreempleadorcliente_consolidated_freq',
+ 'edad',
+ 'fechaingresoempleo_days',
+ 'cargoempleocliente_consolidated_freq',
+ 'fecha_inicio_days',
+ 'balance_to_payment_ratio',
+ 'professional_stability_score',
+ 'saldo',
+ 'employment_years']
+
+ PLUS 'cliente','identificador_unico' ids
+
+
+ ###INFERENCE PART
+
+ 

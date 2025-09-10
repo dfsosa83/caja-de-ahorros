@@ -1,0 +1,7 @@
+Nested CV Data Information
+==================================================
+Training data (full): (29809, 10)
+Test data: (1316, 10)
+Features: 10
+Target: ingresos_reportados
+Preprocessing: RobustScaler

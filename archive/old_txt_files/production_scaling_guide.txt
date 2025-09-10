@@ -1,0 +1,233 @@
+# %%
+# =============================================================================
+# PRODUCTION SCALING: COMPLETE GUIDE
+# =============================================================================
+print("\n🏭 PRODUCTION SCALING IMPLEMENTATION")
+print("=" * 60)
+
+# =============================================================================
+# STEP 1: SAVE BOTH MODEL AND SCALER
+# =============================================================================
+print("\n💾 STEP 1: Proper Model + Scaler Saving")
+print("-" * 40)
+
+# CORRECT WAY: Save both model and scaler
+import joblib
+
+# Save the trained model
+joblib.dump(best_model, 'income_prediction_model.pkl')
+
+# CRITICAL: Save the fitted scaler
+joblib.dump(scaler, 'income_prediction_scaler.pkl')
+
+print("✅ Saved both model and scaler for production")
+
+# Alternative: Save everything in one file
+model_package = {
+    'model': best_model,
+    'scaler': scaler,
+    'feature_columns': list(X_train.columns),  # Important for feature order!
+    'model_version': '1.0',
+    'training_date': '2024-01-15'
+}
+joblib.dump(model_package, 'complete_income_model.pkl')
+print("✅ Alternative: Saved complete model package")
+
+# =============================================================================
+# STEP 2: PRODUCTION PREDICTION PIPELINE
+# =============================================================================
+print("\n🔮 STEP 2: Production Prediction Function")
+print("-" * 40)
+
+def predict_income_production(new_customer_data):
+    """
+    Complete production prediction pipeline
+    
+    Args:
+        new_customer_data: DataFrame with raw customer features
+    
+    Returns:
+        predicted_income: Float with predicted income
+    """
+    
+    # Load the saved model and scaler
+    model = joblib.load('income_prediction_model.pkl')
+    scaler = joblib.load('income_prediction_scaler.pkl')
+    
+    # Or load complete package
+    # model_package = joblib.load('complete_income_model.pkl')
+    # model = model_package['model']
+    # scaler = model_package['scaler']
+    # expected_features = model_package['feature_columns']
+    
+    print(f"📊 Raw customer data shape: {new_customer_data.shape}")
+    
+    # STEP 1: Apply the SAME preprocessing pipeline used in training
+    # (This includes feature engineering, encoding, etc.)
+    processed_data = preprocess_new_customer(new_customer_data)
+    
+    # STEP 2: Select the SAME features used in training
+    # Make sure features are in the same order!
+    model_features = ['edad', 'saldo', 'monto_letra', ...]  # Your selected features
+    X_new = processed_data[model_features]
+    
+    print(f"📊 Processed data shape: {X_new.shape}")
+    
+    # STEP 3: Apply the SAME scaling using the fitted scaler
+    X_new_scaled = pd.DataFrame(
+        scaler.transform(X_new),  # Use transform, NOT fit_transform!
+        columns=X_new.columns,
+        index=X_new.index
+    )
+    
+    print(f"📊 Scaled data shape: {X_new_scaled.shape}")
+    print(f"📊 Scaled data range: {X_new_scaled.min().min():.2f} to {X_new_scaled.max().max():.2f}")
+    
+    # STEP 4: Make prediction
+    prediction = model.predict(X_new_scaled)
+    
+    print(f"💰 Predicted income: ${prediction[0]:,.2f}")
+    
+    return prediction[0]
+
+# =============================================================================
+# STEP 3: PREPROCESSING FUNCTION FOR NEW DATA
+# =============================================================================
+print("\n🔧 STEP 3: New Customer Preprocessing")
+print("-" * 40)
+
+def preprocess_new_customer(raw_data):
+    """
+    Apply the SAME preprocessing steps used in training
+    """
+    df_processed = raw_data.copy()
+    
+    # Apply the SAME transformations as in training
+    # 1. Handle missing values (using SAME median values from training)
+    # 2. Convert dates (using SAME reference date)
+    # 3. Encode categoricals (using SAME frequency mappings)
+    # 4. Create interaction features (using SAME logic)
+    
+    # Example: Missing value imputation
+    if 'monto_letra' in df_processed.columns:
+        # Use the SAME median from training (you should save this!)
+        training_median_monto = 850.0  # This should be saved from training
+        df_processed['monto_letra'] = df_processed['monto_letra'].fillna(training_median_monto)
+    
+    # Example: Date conversion
+    reference_date = pd.Timestamp('2020-01-01')  # SAME as training
+    if 'fechaingresoempleo' in df_processed.columns:
+        df_processed['fechaingresoempleo'] = pd.to_datetime(df_processed['fechaingresoempleo'])
+        df_processed['fechaingresoempleo_days'] = (df_processed['fechaingresoempleo'] - reference_date).dt.days
+    
+    # Example: Categorical encoding
+    # You need to save the frequency mappings from training!
+    if 'ocupacion_consolidated' in df_processed.columns:
+        # Use SAME frequency mapping from training
+        training_freq_map = {'Engineer': 150, 'Teacher': 80, ...}  # Save this from training
+        df_processed['ocupacion_consolidated_freq'] = df_processed['ocupacion_consolidated'].map(training_freq_map)
+        df_processed['ocupacion_consolidated_freq'] = df_processed['ocupacion_consolidated_freq'].fillna(1)  # Unknown categories
+    
+    return df_processed
+
+# =============================================================================
+# STEP 4: COMPLETE PRODUCTION EXAMPLE
+# =============================================================================
+print("\n🚀 STEP 4: Complete Production Example")
+print("-" * 40)
+
+# Example: New customer data
+new_customer = pd.DataFrame({
+    'edad': [35],
+    'saldo': [1500],
+    'monto_letra': [800],
+    'letras_mensuales': [2],
+    'ocupacion_consolidated': ['Engineer'],
+    'ciudad_consolidated': ['Bogota'],
+    'sexo_consolidated': ['Masculino'],
+    # ... other features
+})
+
+print("📋 Example new customer:")
+print(new_customer.head())
+
+# Make prediction
+try:
+    predicted_income = predict_income_production(new_customer)
+    print(f"💰 Predicted income: ${predicted_income:,.2f}")
+except Exception as e:
+    print(f"❌ Prediction failed: {e}")
+
+# =============================================================================
+# STEP 5: WHAT YOU NEED TO SAVE FROM TRAINING
+# =============================================================================
+print("\n💾 STEP 5: Complete Training Artifacts to Save")
+print("-" * 40)
+
+training_artifacts = {
+    # Models
+    'model': best_model,
+    'scaler': scaler,
+    
+    # Feature information
+    'selected_features': selected_features_final,
+    'feature_order': list(X_train.columns),
+    
+    # Preprocessing parameters
+    'reference_date': pd.Timestamp('2020-01-01'),
+    'median_values': {
+        'monto_letra': X_train['monto_letra'].median(),
+        'saldo': X_train['saldo'].median(),
+        # ... other medians used for imputation
+    },
+    
+    # Categorical mappings
+    'frequency_mappings': {
+        'ocupacion_consolidated': train_df['ocupacion_consolidated'].value_counts().to_dict(),
+        'ciudad_consolidated': train_df['ciudad_consolidated'].value_counts().to_dict(),
+        # ... other frequency mappings
+    },
+    
+    # Model metadata
+    'model_version': '1.0',
+    'training_date': pd.Timestamp.now(),
+    'performance_metrics': {
+        'r2': 0.399,
+        'mape': 40.96,
+        'rmse': 908.16
+    }
+}
+
+# Save complete artifacts
+joblib.dump(training_artifacts, 'complete_model_artifacts.pkl')
+print("✅ Saved complete training artifacts for production")
+
+# =============================================================================
+# STEP 6: PRODUCTION DEPLOYMENT CHECKLIST
+# =============================================================================
+print("\n✅ STEP 6: Production Deployment Checklist")
+print("-" * 40)
+
+checklist = [
+    "✅ Model saved (.pkl file)",
+    "✅ Scaler saved (.pkl file)", 
+    "✅ Feature list saved (exact order)",
+    "✅ Preprocessing parameters saved",
+    "✅ Categorical mappings saved",
+    "✅ Reference values saved (dates, medians, etc.)",
+    "✅ Prediction pipeline tested",
+    "✅ Error handling implemented",
+    "✅ Model versioning in place",
+    "✅ Performance monitoring planned"
+]
+
+print("📋 Production Readiness Checklist:")
+for item in checklist:
+    print(f"   {item}")
+
+print(f"\n🎯 KEY PRINCIPLE:")
+print("   Every transformation applied to training data")
+print("   MUST be applied identically to production data")
+print("   using the SAME parameters learned during training!")
+
+print(f"\n✅ Production scaling guide complete!")
