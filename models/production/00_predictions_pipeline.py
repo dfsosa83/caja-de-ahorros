@@ -121,35 +121,116 @@ def convert_date_columns_production(df):
     
     return df
 
+def load_training_frequency_maps():
+    """
+    Load pre-computed frequency mappings from training data
+    These should be saved during model training phase
+    """
+    try:
+        # Try to load pre-computed frequency maps
+        freq_maps_path = r'C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\models\production\frequency_mappings.pkl'
+
+        if os.path.exists(freq_maps_path):
+            if JOBLIB_AVAILABLE:
+                freq_maps = joblib.load(freq_maps_path)
+            else:
+                with open(freq_maps_path, 'rb') as f:
+                    freq_maps = pickle.load(f)
+            print("✅ Training frequency mappings loaded successfully")
+            return freq_maps
+        else:
+            print("⚠️ Training frequency mappings not found - using fallback defaults")
+            return None
+    except Exception as e:
+        print(f"⚠️ Error loading frequency mappings: {e}")
+        return None
+
+def get_default_frequency_maps():
+    """
+    EMERGENCY FALLBACK frequency mappings - USE ONLY IF REAL TRAINING MAPPINGS ARE MISSING!
+
+    These are approximate/generic values and should NOT be used in production.
+    Always create real frequency mappings from your actual training data using:
+    python models/production/create_frequency_mappings.py
+
+    WARNING: These fallback values may not match your actual data distribution!
+    """
+    return {
+        'ocupacion': {
+            'INGENIERO': 150, 'CONTADOR': 120, 'ADMINISTRADOR': 100, 'VENDEDOR': 90,
+            'SECRETARIA': 80, 'OPERARIO': 70, 'CHOFER': 60, 'SUPERVISOR': 50,
+            'TECNICO': 45, 'ASISTENTE': 40, 'GERENTE': 35, 'ANALISTA': 30,
+            'COORDINADOR': 25, 'JEFE': 20, 'DIRECTOR': 15, 'ESTILISTA': 10,
+            'MECANICO': 8, 'ELECTRICISTA': 6, 'PLOMERO': 5, 'OTROS': 1
+        },
+        'nombreempleadorcliente': {
+            'GOBIERNO DE COSTA RICA': 200, 'BANCO NACIONAL': 150, 'ICE': 120,
+            'CCSS': 100, 'MUNICIPALIDAD': 80, 'TECH COMPANY SA': 60,
+            'COMERCIAL LTDA': 40, 'SERVICIOS SA': 30, 'CONSULTORA': 20,
+            'INDEPENDIENTE': 15, 'OTROS': 1
+        },
+        'cargoempleocliente': {
+            'SENIOR ENGINEER': 50, 'ENGINEER': 80, 'ANALYST': 60, 'SUPERVISOR': 45,
+            'COORDINATOR': 40, 'ASSISTANT': 70, 'MANAGER': 30, 'DIRECTOR': 15,
+            'TECHNICIAN': 35, 'OPERATOR': 55, 'SECRETARY': 65, 'SALES': 50,
+            'ADMINISTRATOR': 40, 'SPECIALIST': 25, 'CONSULTANT': 20, 'OTROS': 1
+        }
+    }
+
 def create_frequency_features_production(df):
     """
-    Create frequency encoding features for categorical variables
+    Create frequency encoding features for categorical variables using training data mappings
     """
     print("🔢 Creating frequency encoding features...")
-    
+
+    # Load training frequency mappings
+    training_freq_maps = load_training_frequency_maps()
+
+    if training_freq_maps is None:
+        print("🚨 WARNING: Using fallback frequency mappings - NOT RECOMMENDED FOR PRODUCTION!")
+        print("💡 Create real mappings with: python models/production/create_frequency_mappings.py")
+        training_freq_maps = get_default_frequency_maps()
+
     # Frequency encoding for categorical features
     categorical_freq_features = {
         'ocupacion': 'ocupacion_consolidated_freq',
-        'nombreempleadorcliente': 'nombreempleadorcliente_consolidated_freq', 
+        'nombreempleadorcliente': 'nombreempleadorcliente_consolidated_freq',
         'cargoempleocliente': 'cargoempleocliente_consolidated_freq'
     }
-    
+
     for original_col, freq_col in categorical_freq_features.items():
         if original_col in df.columns:
             print(f"   Creating {freq_col}...")
-            
+
             # Clean and consolidate categorical values
             df[original_col] = df[original_col].astype(str).str.strip().str.upper()
-            
-            # Create frequency encoding
-            freq_map = df[original_col].value_counts().to_dict()
-            df[freq_col] = df[original_col].map(freq_map).fillna(0)
-            
-            print(f"   ✅ {freq_col} created (unique values: {df[freq_col].nunique()})")
+
+            # Use training frequency mappings
+            if original_col in training_freq_maps:
+                freq_map = training_freq_maps[original_col]
+
+                # Map values, use default frequency for unseen values
+                default_freq = min(freq_map.values()) if freq_map else 1  # Use minimum frequency as default
+                df[freq_col] = df[original_col].map(freq_map).fillna(default_freq)
+
+                # Show mapping statistics
+                mapped_count = df[original_col].isin(freq_map.keys()).sum()
+                total_count = len(df)
+                unmapped_count = total_count - mapped_count
+
+                print(f"   ✅ {freq_col} created:")
+                print(f"      📊 Mapped values: {mapped_count}/{total_count}")
+                if unmapped_count > 0:
+                    unmapped_values = df[~df[original_col].isin(freq_map.keys())][original_col].unique()
+                    print(f"      ⚠️ Unmapped values ({unmapped_count}): {list(unmapped_values)[:5]}...")
+                    print(f"      🔧 Using default frequency: {default_freq}")
+            else:
+                print(f"   ⚠️ No training mapping for {original_col} - setting {freq_col} to 1")
+                df[freq_col] = 1
         else:
             print(f"   ⚠️ {original_col} not found - setting {freq_col} to 0")
             df[freq_col] = 0
-    
+
     return df
 
 def create_temporal_features_production(df):

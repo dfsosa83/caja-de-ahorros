@@ -1,0 +1,388 @@
+🧹 DATA CLEANING AND FEATURE HOMOLOGATION
+================================================================================
+📋 Objective: Consolidate categorical features to improve model performance
+🎯 Strategy: Group categories representing <40% into 'Others' category
+📊 Focus: ocupacion, ciudad, nombreempleadorcliente, cargoempleocliente
+
+🎯 ANALYZING 7 CATEGORICAL VARIABLES FOR CONSOLIDATION
+================================================================================
+
+🔍 CONSOLIDATION ANALYSIS: ocupacion
+============================================================
+📊 Current state:
+   Total non-null values: 29,312
+   Unique categories: 245
+   Missing values: 7
+
+📈 Consolidation recommendation:
+   Keep as separate: 26 categories (21,914 records, 74.8%)
+   Consolidate to 'Others': 219 categories (7,398 records, 25.2%)
+
+🏆 Top categories to keep:
+    1. 'JUBILADO                                     ': 4,862 (16.6%)
+    2. 'DOCENTE                                      ': 2,080 (7.1%)
+    3. 'POLICIA                                      ': 1,578 (5.4%)
+    4. 'OFICINISTAS                                  ': 1,070 (3.6%)
+    5. 'SUPERVISOR                                   ': 1,049 (3.6%)
+    6. 'ASISTENTE                                    ': 894 (3.0%)
+    7. 'SECRETARIAS                                  ': 829 (2.8%)
+    8. 'ADMINISTRADOR                                ': 828 (2.8%)
+    9. 'VENDEDOR                                     ': 823 (2.8%)
+   10. 'TECNICO                                      ': 681 (2.3%)
+   11. 'INGENIERO                                    ': 592 (2.0%)
+   12. 'ABOGADOS                                     ': 587 (2.0%)
+   13. 'GERENTE                                      ': 557 (1.9%)
+   14. 'ENFERMERA                                    ': 534 (1.8%)
+   15. 'AYUDANTE GENERAL                             ': 498 (1.7%)
+   ... and 11 more categories
+
+📦 Sample categories to consolidate (showing first 10):
+    1. 'CONDUCTOR                                    ': 247 (0.8%)
+    2. 'OFICIAL                                      ': 247 (0.8%)
+    3. 'OPERADOR DE MAQUINARIA                       ': 237 (0.8%)
+    4. 'JEFE DE DEPARTAMENTO                         ': 230 (0.8%)
+    5. 'GUARDIA DE SEGURIDAD                         ': 201 (0.7%)
+    6. 'MECANICO                                     ': 189 (0.6%)
+    7. 'AUDITOR                                      ': 171 (0.6%)
+    8. 'BANQUEROS                                    ': 164 (0.6%)
+    9. 'FARMACEUTICO                                 ': 160 (0.6%)
+   10. 'INSPECTOR                                    ': 159 (0.5%)
+   ... and 209 more categories
+
+🔍 CONSOLIDATION ANALYSIS: ciudad
+============================================================
+📊 Current state:
+   Total non-null values: 28,821
+   Unique categories: 78
+   Missing values: 498
+
+📈 Consolidation recommendation:
+   Keep as separate: 8 categories (23,030 records, 79.9%)
+   Consolidate to 'Others': 70 categories (5,791 records, 20.1%)
+
+🏆 Top categories to keep:
+    1. 'PANAMA                                       ': 10,010 (34.7%)
+    2. 'ARRAIJAN                                     ': 2,968 (10.3%)
+    3. 'SAN MIGUELITO                                ': 2,888 (10.0%)
+    4. 'LA CHORRERA                                  ': 2,572 (8.9%)
+    5. 'DAVID                                        ': 1,758 (6.1%)
+    6. 'COLON                                        ': 1,032 (3.6%)
+    7. 'CHITRE                                       ': 904 (3.1%)
+    8. 'SANTIAGO                                     ': 898 (3.1%)
+
+📦 Sample categories to consolidate (showing first 10):
+    1. 'PENONOME                                     ': 633 (2.2%)
+    2. 'BUGABA                                       ': 622 (2.2%)
+    3. 'CHANGUINOLA                                  ': 479 (1.7%)
+    4. 'AGUADULCE                                    ': 441 (1.5%)
+    5. 'DOLEGA                                       ': 440 (1.5%)
+    6. 'LAS TABLAS                                   ': 425 (1.5%)
+    7. 'BARU                                         ': 230 (0.8%)
+    8. 'BOQUETE                                      ': 215 (0.8%)
+    9. 'BOQUERON                                     ': 203 (0.7%)
+   10. 'LOS SANTOS                                   ': 201 (0.7%)
+   ... and 60 more categories
+
+🔍 CONSOLIDATION ANALYSIS: nombreempleadorcliente
+============================================================
+📊 Current state:
+   Total non-null values: 27,863
+   Unique categories: 7,698
+   Missing values: 1,456
+
+📈 Consolidation recommendation:
+   Keep as separate: 75 categories (16,689 records, 59.9%)
+   Consolidate to 'Others': 7,623 categories (11,174 records, 40.1%)
+
+🏆 Top categories to keep:
+    1. 'NO APLICA': 4,212 (15.1%)
+    2. 'MINISTERIO DE EDUCACION': 2,299 (8.2%)
+    3. 'MINISTERIO DE SEGURIDAD PUBLICA': 1,468 (5.3%)
+    4. 'CAJA DE SEGURO SOCIAL': 1,352 (4.8%)
+    5. 'CAJA DE AHORROS': 1,027 (3.7%)
+    6. 'MINISTERIO DE SALUD': 786 (2.8%)
+    7. 'INDEPENDIENTE': 395 (1.4%)
+    8. 'ORGANO JUDICIAL': 331 (1.2%)
+    9. 'PROCURADURIA GENERAL DE LA NACION': 266 (0.9%)
+   10. 'UNIVERSIDAD DE PANAMA': 261 (0.9%)
+   11. 'MINISTERIO DE LA PRESIDENCIA': 218 (0.8%)
+   12. 'CONTRALORIA GENERAL DE LA REPUBLICA': 205 (0.7%)
+   13. 'JUBILADO': 193 (0.7%)
+   14. 'ASAMBLEA NACIONAL': 181 (0.7%)
+   15. 'MINISTERIO DE ECONOMIA Y FINANZAS': 153 (0.6%)
+   ... and 60 more categories
+
+📦 Sample categories to consolidate (showing first 10):
+    1. 'BANISTMO': 21 (0.1%)
+    2. 'ASAMBLEA LEGISLATIVA': 21 (0.1%)
+    3. 'AUTORIDAD DE ASEO': 20 (0.1%)
+    4. 'CABLE AND WIRELESS': 20 (0.1%)
+    5. 'IMPORTADORA RICAMAR, S.A. (SUP': 20 (0.1%)
+    6. 'TRANSPORTE MASIVO DE PANAMÂµ, S': 20 (0.1%)
+    7. 'MINISTERIO DE VIVIENDA Y ORDENAMIENTO TERRITO': 19 (0.1%)
+    8. 'BANCO DE DESARROLLO AGROPECUARIO': 19 (0.1%)
+    9. 'CONSTRUCTORA RIGASERVICES, S.A.': 19 (0.1%)
+   10. 'BANCO GENERAL S A': 19 (0.1%)
+   ... and 7613 more categories
+
+🔍 CONSOLIDATION ANALYSIS: cargoempleocliente
+============================================================
+📊 Current state:
+   Total non-null values: 21,836
+   Unique categories: 2,178
+   Missing values: 7,483
+
+📈 Consolidation recommendation:
+   Keep as separate: 29 categories (12,996 records, 59.5%)
+   Consolidate to 'Others': 2,149 categories (8,840 records, 40.5%)
+
+🏆 Top categories to keep:
+    1. 'JUBILADO': 2,861 (13.1%)
+    2. 'POLICIA': 1,094 (5.0%)
+    3. 'DOCENTE': 988 (4.5%)
+    4. 'SUPERVISOR': 641 (2.9%)
+    5. 'SECRETARIA': 641 (2.9%)
+    6. 'OFICINISTA': 619 (2.8%)
+    7. 'ASISTENTE': 610 (2.8%)
+    8. 'VENDEDOR': 476 (2.2%)
+    9. 'EDUCADOR': 390 (1.8%)
+   10. 'EDUCADORA': 365 (1.7%)
+   11. 'TECNICO': 364 (1.7%)
+   12. 'ENFERMERA': 362 (1.7%)
+   13. 'GERENTE': 351 (1.6%)
+   14. 'AYUDANTE GENERA': 323 (1.5%)
+   15. 'ANALISTA': 290 (1.3%)
+   ... and 14 more categories
+
+📦 Sample categories to consolidate (showing first 10):
+    1. 'ESTUDIANTE': 137 (0.6%)
+    2. 'AYUDANTE': 129 (0.6%)
+    3. 'SEGURIDAD': 125 (0.6%)
+    4. 'OFICINISTAS': 124 (0.6%)
+    5. 'MECANICO': 122 (0.6%)
+    6. 'VENDEDORA': 115 (0.5%)
+    7. 'GUARDIA DE SEGU': 108 (0.5%)
+    8. 'CAJERA': 107 (0.5%)
+    9. 'AUXILIAR': 97 (0.4%)
+   10. 'PROFESOR': 96 (0.4%)
+   ... and 2139 more categories
+
+🔍 CONSOLIDATION ANALYSIS: sexo
+============================================================
+📊 Current state:
+   Total non-null values: 29,319
+   Unique categories: 2
+   Missing values: 0
+
+📈 Consolidation recommendation:
+   Keep as separate: 2 categories (29,319 records, 100.0%)
+   Consolidate to 'Others': 0 categories (0 records, 0.0%)
+
+🏆 Top categories to keep:
+    1. 'Femenino': 22,917 (78.2%)
+    2. 'Masculino': 6,402 (21.8%)
+
+🔍 CONSOLIDATION ANALYSIS: estado_civil
+============================================================
+📊 Current state:
+   Total non-null values: 29,319
+   Unique categories: 4
+   Missing values: 0
+
+📈 Consolidation recommendation:
+   Keep as separate: 2 categories (29,295 records, 99.9%)
+   Consolidate to 'Others': 2 categories (24 records, 0.1%)
+
+🏆 Top categories to keep:
+    1. 'Soltero': 16,705 (57.0%)
+    2. 'Casado': 12,590 (42.9%)
+
+📦 Sample categories to consolidate (showing first 10):
+    1. 'Otros': 21 (0.1%)
+    2. 'Divorciado': 3 (0.0%)
+
+🔍 CONSOLIDATION ANALYSIS: pais
+============================================================
+📊 Current state:
+   Total non-null values: 29,319
+   Unique categories: 16
+   Missing values: 0
+
+📈 Consolidation recommendation:
+   Keep as separate: 1 categories (29,295 records, 99.9%)
+   Consolidate to 'Others': 15 categories (24 records, 0.1%)
+
+🏆 Top categories to keep:
+    1. 'PANAMA                                       ': 29,295 (99.9%)
+
+📦 Sample categories to consolidate (showing first 10):
+    1. 'COLOMBIA                                     ': 4 (0.0%)
+    2. 'EL SALVADOR                                  ': 3 (0.0%)
+    3. 'NICARAGUA                                    ': 3 (0.0%)
+    4. 'PERU                                         ': 2 (0.0%)
+    5. 'PALESTINA                                    ': 2 (0.0%)
+    6. 'REPUBLICA DOMINICANA                         ': 1 (0.0%)
+    7. 'PAPUA NUEVA GUINEA                           ': 1 (0.0%)
+    8. 'NAMIBIA                                      ': 1 (0.0%)
+    9. 'BRASIL                                       ': 1 (0.0%)
+   10. 'RUSIA                                        ': 1 (0.0%)
+   ... and 5 more categories
+
+🔧 CREATING CONSOLIDATED DATASET
+==================================================
+
+🔄 Consolidating: ocupacion
+   🔧 Processing ocupacion (dtype: category)...
+   📝 Converting categorical to string for processing...
+   ✅ Successfully consolidated ocupacion
+   📊 Original categories: 245
+   📊 Consolidated categories: 27
+   📈 Reduction: 89.0%
+   🏆 Top 5 categories after consolidation:
+     1. 'Others': 7,405 (25.3%)
+     2. 'JUBILADO                                     ': 4,862 (16.6%)
+     3. 'DOCENTE                                      ': 2,080 (7.1%)
+     4. 'POLICIA                                      ': 1,578 (5.4%)
+     5. 'OFICINISTAS                                  ': 1,070 (3.6%)
+
+🔄 Consolidating: ciudad
+   🔧 Processing ciudad (dtype: category)...
+   📝 Converting categorical to string for processing...
+   ✅ Successfully consolidated ciudad
+   📊 Original categories: 78
+   📊 Consolidated categories: 9
+   📈 Reduction: 88.5%
+   🏆 Top 5 categories after consolidation:
+     1. 'PANAMA                                       ': 10,010 (34.1%)
+     2. 'Others': 6,289 (21.5%)
+     3. 'ARRAIJAN                                     ': 2,968 (10.1%)
+     4. 'SAN MIGUELITO                                ': 2,888 (9.9%)
+     5. 'LA CHORRERA                                  ': 2,572 (8.8%)
+
+🔄 Consolidating: nombreempleadorcliente
+   🔧 Processing nombreempleadorcliente (dtype: category)...
+   📝 Converting categorical to string for processing...
+   ✅ Successfully consolidated nombreempleadorcliente
+   📊 Original categories: 7,698
+   📊 Consolidated categories: 76
+   📈 Reduction: 99.0%
+   🏆 Top 5 categories after consolidation:
+     1. 'Others': 12,630 (43.1%)
+     2. 'NO APLICA': 4,212 (14.4%)
+     3. 'MINISTERIO DE EDUCACION': 2,299 (7.8%)
+     4. 'MINISTERIO DE SEGURIDAD PUBLICA': 1,468 (5.0%)
+     5. 'CAJA DE SEGURO SOCIAL': 1,352 (4.6%)
+
+🔄 Consolidating: cargoempleocliente
+   🔧 Processing cargoempleocliente (dtype: category)...
+   📝 Converting categorical to string for processing...
+   ✅ Successfully consolidated cargoempleocliente
+   📊 Original categories: 2,178
+   📊 Consolidated categories: 30
+   📈 Reduction: 98.6%
+   🏆 Top 5 categories after consolidation:
+     1. 'Others': 16,323 (55.7%)
+     2. 'JUBILADO': 2,861 (9.8%)
+     3. 'POLICIA': 1,094 (3.7%)
+     4. 'DOCENTE': 988 (3.4%)
+     5. 'SUPERVISOR': 641 (2.2%)
+
+🔄 Consolidating: sexo
+   🔧 Processing sexo (dtype: category)...
+   📝 Converting categorical to string for processing...
+   ✅ Successfully consolidated sexo
+   📊 Original categories: 2
+   📊 Consolidated categories: 2
+   📈 Reduction: 0.0%
+   🏆 Top 5 categories after consolidation:
+     1. 'Femenino': 22,917 (78.2%)
+     2. 'Masculino': 6,402 (21.8%)
+
+🔄 Consolidating: estado_civil
+   🔧 Processing estado_civil (dtype: category)...
+   📝 Converting categorical to string for processing...
+   ✅ Successfully consolidated estado_civil
+   📊 Original categories: 4
+   📊 Consolidated categories: 3
+   📈 Reduction: 25.0%
+   🏆 Top 5 categories after consolidation:
+     1. 'Soltero': 16,705 (57.0%)
+     2. 'Casado': 12,590 (42.9%)
+     3. 'Others': 24 (0.1%)
+
+🔄 Consolidating: pais
+   🔧 Processing pais (dtype: category)...
+   📝 Converting categorical to string for processing...
+   ✅ Successfully consolidated pais
+   📊 Original categories: 16
+   📊 Consolidated categories: 2
+   📈 Reduction: 87.5%
+   🏆 Top 5 categories after consolidation:
+     1. 'PANAMA                                       ': 29,295 (99.9%)
+     2. 'Others': 24 (0.1%)
+
+✅ CONSOLIDATION COMPLETED SUCCESSFULLY!
+
+✅ CONSOLIDATION VALIDATION
+==================================================
+📊 ocupacion:
+   Data preserved: ❌
+   Others category created: ✅
+   Records in 'Others': 7,405
+📊 ciudad:
+   Data preserved: ❌
+   Others category created: ✅
+   Records in 'Others': 6,289
+📊 nombreempleadorcliente:
+   Data preserved: ❌
+   Others category created: ✅
+   Records in 'Others': 12,630
+📊 cargoempleocliente:
+   Data preserved: ❌
+   Others category created: ✅
+   Records in 'Others': 16,323
+📊 sexo:
+   Data preserved: ✅
+   Others category created: ❌
+   Records in 'Others': 0
+📊 estado_civil:
+   Data preserved: ✅
+   Others category created: ✅
+   Records in 'Others': 24
+📊 pais:
+   Data preserved: ✅
+   Others category created: ✅
+   Records in 'Others': 24
+
+📈 CONSOLIDATION SUMMARY
+==================================================
+📊 Overall consolidation impact:
+   Total original categories: 10,221
+   Total consolidated categories: 149
+   Overall reduction: 98.5%
+
+📋 Detailed breakdown:
+   ocupacion:
+     245 → 27 categories (89.0% reduction)
+     7,405 records moved to 'Others'
+   ciudad:
+     78 → 9 categories (88.5% reduction)
+     6,289 records moved to 'Others'
+   nombreempleadorcliente:
+     7,698 → 76 categories (99.0% reduction)
+     12,630 records moved to 'Others'
+   cargoempleocliente:
+     2,178 → 30 categories (98.6% reduction)
+     16,323 records moved to 'Others'
+   sexo:
+     2 → 2 categories (0.0% reduction)
+     0 records moved to 'Others'
+   estado_civil:
+     4 → 3 categories (25.0% reduction)
+     24 records moved to 'Others'
+   pais:
+     16 → 2 categories (87.5% reduction)
+     24 records moved to 'Others'
+
+📊 CREATING CONSOLIDATION IMPACT VISUALIZATIONS
+==================================================

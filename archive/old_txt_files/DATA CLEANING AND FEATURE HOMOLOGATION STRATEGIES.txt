@@ -1,0 +1,455 @@
+# =============================================================================
+# STEP 5: DATA CLEANING AND FEATURE HOMOLOGATION STRATEGIES
+# =============================================================================
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import Counter
+import warnings
+warnings.filterwarnings('ignore')
+
+print("🧹 DATA CLEANING AND FEATURE HOMOLOGATION")
+print("="*80)
+print("📋 Objective: Consolidate categorical features to improve model performance")
+print("🎯 Strategy: Group categories representing <40% into 'Others' category")
+print("📊 Focus: ocupacion, ciudad, nombreempleadorcliente, cargoempleocliente")
+
+# =============================================================================
+# STEP 5.1: CATEGORICAL FEATURE CONSOLIDATION STRATEGY
+# =============================================================================
+
+def analyze_categorical_for_consolidation(df, column_name, min_frequency_pct=5.0, top_categories_pct=60.0):
+    """
+    Analyze categorical column and recommend consolidation strategy
+    
+    Parameters:
+    - df: DataFrame
+    - column_name: Column to analyze
+    - min_frequency_pct: Minimum frequency percentage to keep as separate category
+    - top_categories_pct: Percentage of data that top categories should represent
+    """
+    print(f"\n🔍 CONSOLIDATION ANALYSIS: {column_name}")
+    print("="*60)
+    
+    if column_name not in df.columns:
+        print(f"❌ Column '{column_name}' not found!")
+        return None
+    
+    # Get value counts and percentages
+    value_counts = df[column_name].value_counts()
+    total_non_null = df[column_name].notna().sum()
+    value_percentages = (value_counts / total_non_null * 100).round(2)
+    
+    # Calculate cumulative percentages
+    cumulative_pct = value_percentages.cumsum()
+    
+    print(f"📊 Current state:")
+    print(f"   Total non-null values: {total_non_null:,}")
+    print(f"   Unique categories: {len(value_counts):,}")
+    print(f"   Missing values: {df[column_name].isnull().sum():,}")
+    
+    # Find categories that represent the target percentage
+    top_categories_mask = cumulative_pct <= top_categories_pct
+    top_categories = value_counts[top_categories_mask]
+    
+    # Find categories above minimum frequency
+    frequent_categories_mask = value_percentages >= min_frequency_pct
+    frequent_categories = value_counts[frequent_categories_mask]
+    
+    # Combine both criteria (categories that are either in top % OR above min frequency)
+    keep_categories = set(top_categories.index) | set(frequent_categories.index)
+    consolidate_categories = set(value_counts.index) - keep_categories
+    
+    # Calculate statistics
+    keep_count = sum(value_counts[cat] for cat in keep_categories)
+    consolidate_count = sum(value_counts[cat] for cat in consolidate_categories)
+    
+    print(f"\n📈 Consolidation recommendation:")
+    print(f"   Keep as separate: {len(keep_categories):,} categories ({keep_count:,} records, {keep_count/total_non_null*100:.1f}%)")
+    print(f"   Consolidate to 'Others': {len(consolidate_categories):,} categories ({consolidate_count:,} records, {consolidate_count/total_non_null*100:.1f}%)")
+    
+    # Show top categories to keep
+    print(f"\n🏆 Top categories to keep:")
+    keep_categories_sorted = [(cat, value_counts[cat], value_percentages[cat]) 
+                             for cat in sorted(keep_categories, key=lambda x: value_counts[x], reverse=True)]
+    
+    for i, (cat, count, pct) in enumerate(keep_categories_sorted[:15], 1):
+        print(f"   {i:2d}. '{cat}': {count:,} ({pct:.1f}%)")
+    
+    if len(keep_categories_sorted) > 15:
+        print(f"   ... and {len(keep_categories_sorted) - 15} more categories")
+    
+    # Show sample of categories to consolidate
+    if consolidate_categories:
+        print(f"\n📦 Sample categories to consolidate (showing first 10):")
+        consolidate_sorted = sorted(consolidate_categories, key=lambda x: value_counts[x], reverse=True)
+        for i, cat in enumerate(consolidate_sorted[:10], 1):
+            count = value_counts[cat]
+            pct = value_percentages[cat]
+            print(f"   {i:2d}. '{cat}': {count:,} ({pct:.1f}%)")
+        
+        if len(consolidate_sorted) > 10:
+            print(f"   ... and {len(consolidate_sorted) - 10} more categories")
+    
+    return {
+        'column_name': column_name,
+        'keep_categories': list(keep_categories),
+        'consolidate_categories': list(consolidate_categories),
+        'keep_count': keep_count,
+        'consolidate_count': consolidate_count,
+        'original_unique': len(value_counts),
+        'final_unique': len(keep_categories) + (1 if consolidate_categories else 0)
+    }
+
+# =============================================================================
+# STEP 5.2: APPLY CONSOLIDATION ANALYSIS TO KEY CATEGORICAL VARIABLES
+# =============================================================================
+
+# Define the categorical columns to analyze and consolidate
+target_columns_for_consolidation = [
+    'ocupacion',
+    'ciudad', 
+    'nombreempleadorcliente',
+    'cargoempleocliente',
+    'sexo',
+    'estado_civil',
+    'pais'
+]
+
+# Store consolidation recommendations
+consolidation_recommendations = {}
+
+print(f"\n🎯 ANALYZING {len(target_columns_for_consolidation)} CATEGORICAL VARIABLES FOR CONSOLIDATION")
+print("="*80)
+
+for column in target_columns_for_consolidation:
+    if column in df_clientes.columns:
+        # Use different thresholds based on column characteristics
+        if column in ['sexo', 'estado_civil', 'pais']:
+            # For low-cardinality columns, use lower thresholds
+            recommendation = analyze_categorical_for_consolidation(
+                df_clientes, column, min_frequency_pct=2.0, top_categories_pct=80.0
+            )
+        elif column in ['ciudad']:
+            # For geographic data, be more selective
+            recommendation = analyze_categorical_for_consolidation(
+                df_clientes, column, min_frequency_pct=3.0, top_categories_pct=70.0
+            )
+        else:
+            # For high-cardinality columns like ocupacion, nombreempleadorcliente, cargoempleocliente
+            recommendation = analyze_categorical_for_consolidation(
+                df_clientes, column, min_frequency_pct=1.0, top_categories_pct=60.0
+            )
+        
+        if recommendation:
+            consolidation_recommendations[column] = recommendation
+    else:
+        print(f"⚠️  Column '{column}' not found in dataset")
+
+# =============================================================================
+# STEP 5.3: IMPLEMENT CONSOLIDATION FUNCTION (FIXED FOR CATEGORICAL DTYPE)
+# =============================================================================
+
+def consolidate_categorical_column(df, column_name, keep_categories, others_label="Others"):
+    """
+    Consolidate categorical column by grouping low-frequency categories
+    FIXED: Handles pandas categorical dtype properly
+    
+    Parameters:
+    - df: DataFrame
+    - column_name: Column to consolidate
+    - keep_categories: List of categories to keep as-is
+    - others_label: Label for consolidated categories
+    
+    Returns:
+    - Series with consolidated categories
+    """
+    if column_name not in df.columns:
+        print(f"❌ Column '{column_name}' not found!")
+        return df[column_name].copy()
+    
+    print(f"   🔧 Processing {column_name} (dtype: {df[column_name].dtype})...")
+    
+    # Create a copy of the column
+    consolidated_column = df[column_name].copy()
+    
+    # Check if column is categorical dtype and convert to string first
+    if pd.api.types.is_categorical_dtype(consolidated_column):
+        print(f"   📝 Converting categorical to string for processing...")
+        consolidated_column = consolidated_column.astype(str)
+    
+    # Handle NaN values - convert to string representation temporarily
+    consolidated_column = consolidated_column.fillna('__MISSING__')
+    
+    # Create mask for values to replace
+    mask = ~consolidated_column.isin(keep_categories)
+    
+    # Don't replace the missing value placeholder
+    mask = mask & (consolidated_column != '__MISSING__')
+    
+    # Apply consolidation
+    consolidated_column.loc[mask] = others_label
+    
+    # Convert missing values back to NaN
+    consolidated_column = consolidated_column.replace('__MISSING__', np.nan)
+    
+    print(f"   ✅ Successfully consolidated {column_name}")
+    return consolidated_column
+
+# =============================================================================
+# STEP 5.4: CREATE CONSOLIDATED DATASET (UPDATED)
+# =============================================================================
+
+print(f"\n🔧 CREATING CONSOLIDATED DATASET")
+print("="*50)
+
+# Create a copy of the original dataset
+df_clientes_consolidated = df_clientes.copy()
+
+# Apply consolidation to each recommended column
+consolidation_summary = {}
+
+for column, recommendation in consolidation_recommendations.items():
+    print(f"\n🔄 Consolidating: {column}")
+    
+    # Apply consolidation
+    original_unique = df_clientes_consolidated[column].nunique()
+    
+    df_clientes_consolidated[f"{column}_consolidated"] = consolidate_categorical_column(
+        df_clientes_consolidated, 
+        column, 
+        recommendation['keep_categories'],
+        others_label="Others"
+    )
+    
+    new_unique = df_clientes_consolidated[f"{column}_consolidated"].nunique()
+    
+    # Calculate reduction
+    reduction_pct = ((original_unique - new_unique) / original_unique * 100) if original_unique > 0 else 0
+    
+    print(f"   📊 Original categories: {original_unique:,}")
+    print(f"   📊 Consolidated categories: {new_unique:,}")
+    print(f"   📈 Reduction: {reduction_pct:.1f}%")
+    
+    # Show top categories in consolidated column
+    new_value_counts = df_clientes_consolidated[f"{column}_consolidated"].value_counts()
+    print(f"   🏆 Top 5 categories after consolidation:")
+    for i, (cat, count) in enumerate(new_value_counts.head(5).items(), 1):
+        pct = count / len(df_clientes_consolidated) * 100
+        print(f"     {i}. '{cat}': {count:,} ({pct:.1f}%)")
+    
+    # Store summary
+    consolidation_summary[column] = {
+        'original_unique': original_unique,
+        'consolidated_unique': new_unique,
+        'reduction_pct': reduction_pct,
+        'others_count': (df_clientes_consolidated[f"{column}_consolidated"] == "Others").sum()
+    }
+
+print(f"\n✅ CONSOLIDATION COMPLETED SUCCESSFULLY!")
+
+# =============================================================================
+# STEP 5.5: VALIDATION AND QUALITY CHECKS
+# =============================================================================
+
+print(f"\n✅ CONSOLIDATION VALIDATION")
+print("="*50)
+
+def validate_consolidation(df_original, df_consolidated, column_mapping):
+    """
+    Validate that consolidation was applied correctly
+    """
+    validation_results = {}
+    
+    for original_col, consolidated_col in column_mapping.items():
+        if original_col in df_original.columns and consolidated_col in df_consolidated.columns:
+            # Check that no data was lost
+            original_non_null = df_original[original_col].notna().sum()
+            consolidated_non_null = df_consolidated[consolidated_col].notna().sum()
+            
+            # Check that Others category was created appropriately
+            others_count = (df_consolidated[consolidated_col] == "Others").sum()
+            
+            validation_results[original_col] = {
+                'data_preserved': original_non_null == consolidated_non_null,
+                'others_created': others_count > 0,
+                'original_non_null': original_non_null,
+                'consolidated_non_null': consolidated_non_null,
+                'others_count': others_count
+            }
+            
+            print(f"📊 {original_col}:")
+            print(f"   Data preserved: {'✅' if validation_results[original_col]['data_preserved'] else '❌'}")
+            print(f"   Others category created: {'✅' if validation_results[original_col]['others_created'] else '❌'}")
+            print(f"   Records in 'Others': {others_count:,}")
+    
+    return validation_results
+
+# Create column mapping for validation
+column_mapping = {col: f"{col}_consolidated" for col in consolidation_recommendations.keys()}
+
+# Validate consolidation
+validation_results = validate_consolidation(df_clientes, df_clientes_consolidated, column_mapping)
+
+# =============================================================================
+# STEP 5.6: SUMMARY STATISTICS AND RECOMMENDATIONS
+# =============================================================================
+
+print(f"\n📈 CONSOLIDATION SUMMARY")
+print("="*50)
+
+total_original_categories = sum(summary['original_unique'] for summary in consolidation_summary.values())
+total_consolidated_categories = sum(summary['consolidated_unique'] for summary in consolidation_summary.values())
+overall_reduction = ((total_original_categories - total_consolidated_categories) / total_original_categories * 100)
+
+print(f"📊 Overall consolidation impact:")
+print(f"   Total original categories: {total_original_categories:,}")
+print(f"   Total consolidated categories: {total_consolidated_categories:,}")
+print(f"   Overall reduction: {overall_reduction:.1f}%")
+
+print(f"\n📋 Detailed breakdown:")
+for column, summary in consolidation_summary.items():
+    print(f"   {column}:")
+    print(f"     {summary['original_unique']:,} → {summary['consolidated_unique']:,} categories ({summary['reduction_pct']:.1f}% reduction)")
+    print(f"     {summary['others_count']:,} records moved to 'Others'")
+
+# =============================================================================
+# STEP 5.7: VISUALIZATION OF CONSOLIDATION IMPACT
+# =============================================================================
+
+print(f"\n📊 CREATING CONSOLIDATION IMPACT VISUALIZATIONS")
+print("="*50)
+
+def visualize_consolidation_impact(df_original, df_consolidated, consolidation_summary, max_cols=4):
+    """
+    Create before/after visualizations for consolidation
+    """
+    # Select columns to visualize (limit to avoid overcrowding)
+    columns_to_plot = list(consolidation_summary.keys())[:max_cols]
+    
+    fig, axes = plt.subplots(len(columns_to_plot), 2, figsize=(15, 4*len(columns_to_plot)))
+    if len(columns_to_plot) == 1:
+        axes = axes.reshape(1, -1)
+    
+    for i, column in enumerate(columns_to_plot):
+        # Before consolidation
+        ax1 = axes[i, 0]
+        value_counts_original = df_original[column].value_counts().head(15)
+        value_counts_original.plot(kind='bar', ax=ax1, color='lightcoral', alpha=0.7)
+        ax1.set_title(f'{column} - Before Consolidation\n({consolidation_summary[column]["original_unique"]} categories)', 
+                     fontweight='bold')
+        ax1.set_xlabel('')
+        ax1.set_ylabel('Count')
+        ax1.tick_params(axis='x', rotation=45, labelsize=8)
+        
+        # After consolidation
+        ax2 = axes[i, 1]
+        consolidated_col = f"{column}_consolidated"
+        value_counts_consolidated = df_consolidated[consolidated_col].value_counts()
+        value_counts_consolidated.plot(kind='bar', ax=ax2, color='lightblue', alpha=0.7)
+        ax2.set_title(f'{column} - After Consolidation\n({consolidation_summary[column]["consolidated_unique"]} categories)', 
+                     fontweight='bold')
+        ax2.set_xlabel('')
+        ax2.set_ylabel('Count')
+        ax2.tick_params(axis='x', rotation=45, labelsize=8)
+        
+        # Highlight Others category
+        if 'Others' in value_counts_consolidated.index:
+            others_idx = list(value_counts_consolidated.index).index('Others')
+            ax2.patches[others_idx].set_color('orange')
+            ax2.patches[others_idx].set_alpha(0.8)
+    
+    plt.tight_layout()
+    plt.show()
+
+# Create visualizations
+visualize_consolidation_impact(df_clientes, df_clientes_consolidated, consolidation_summary)
+
+# =============================================================================
+# STEP 5.8: ADDITIONAL DATA QUALITY IMPROVEMENTS
+# =============================================================================
+
+print(f"\n🔧 ADDITIONAL DATA QUALITY IMPROVEMENTS")
+print("="*50)
+
+def apply_additional_cleaning(df):
+    """
+    Apply additional data quality improvements
+    """
+    df_cleaned = df.copy()
+    
+    print("🧹 Applying additional cleaning steps:")
+    
+    # 1. Standardize text fields (remove extra spaces, standardize case)
+    text_columns = ['ocupacion_consolidated', 'ciudad_consolidated', 
+                   'nombreempleadorcliente_consolidated', 'cargoempleocliente_consolidated']
+    
+    for col in text_columns:
+        if col in df_cleaned.columns:
+            print(f"   📝 Standardizing text in: {col}")
+            # Convert to string first, then clean
+            df_cleaned[col] = df_cleaned[col].astype(str)
+            # Remove extra spaces and standardize case
+            df_cleaned[col] = df_cleaned[col].str.strip().str.title()
+            # Handle 'Others' category specifically
+            df_cleaned[col] = df_cleaned[col].replace('Others', 'Others')
+            # Handle NaN that became 'Nan'
+            df_cleaned[col] = df_cleaned[col].replace('Nan', np.nan)
+    
+    # 2. Create binary flags for missing values in important columns
+    important_columns = ['fechaingresoempleo', 'nombreempleadorcliente', 'cargoempleocliente']
+    
+    for col in important_columns:
+        if col in df_cleaned.columns:
+            flag_col = f"missing_{col}"
+            df_cleaned[flag_col] = df_cleaned[col].isnull().astype(int)
+            print(f"   🏷️  Created missing value flag: {flag_col}")
+    
+    # 3. Create derived features
+    print("   🔧 Creating derived features:")
+    
+    # Employment status derived from occupation
+    if 'ocupacion_consolidated' in df_cleaned.columns:
+        df_cleaned['is_retired'] = (df_cleaned['ocupacion_consolidated'].str.contains('Jubilado', na=False)).astype(int)
+        print("     - is_retired (from ocupacion)")
+    
+    # Age groups (if age column exists)
+    if 'edad' in df_cleaned.columns:
+        df_cleaned['age_group'] = pd.cut(df_cleaned['edad'], 
+                                       bins=[0, 25, 35, 45, 55, 65, 100], 
+                                       labels=['18-25', '26-35', '36-45', '46-55', '56-65', '65+'])
+        print("     - age_group (from edad)")
+    
+    # 4. Income-to-payment ratio (if both exist)
+    if 'ingresos_reportados' in df_cleaned.columns and 'monto_letra' in df_cleaned.columns:
+        df_cleaned['payment_to_income_ratio'] = (df_cleaned['monto_letra'] / 
+                                               df_cleaned['ingresos_reportados']).fillna(0)
+        # Cap extreme ratios
+        df_cleaned['payment_to_income_ratio'] = df_cleaned['payment_to_income_ratio'].clip(0, 2)
+        print("     - payment_to_income_ratio")
+    
+    return df_cleaned
+
+# Apply additional cleaning
+df_clientes_final = apply_additional_cleaning(df_clientes_consolidated)
+
+print(f"\n✅ FINAL DATASET SUMMARY")
+print("="*50)
+print(f"📊 Final dataset shape: {df_clientes_final.shape}")
+print(f"💾 Memory usage: {df_clientes_final.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+
+# Show final column summary
+print(f"\n📋 Final columns ({len(df_clientes_final.columns)}):")
+for i, col in enumerate(df_clientes_final.columns, 1):
+    col_type = str(df_clientes_final[col].dtype)
+    non_null = df_clientes_final[col].notna().sum()
+    print(f"   {i:2d}. {col:<35} | {col_type:<15} | Non-null: {non_null:,}")
+
+print(f"\n🎉 DATA CONSOLIDATION AND CLEANING COMPLETE!")
+print("📝 Next steps:")
+print("   1. Feature engineering and encoding")
+print("   2. Train-test split")
+print("   3. Model training and evaluation")
+print("   4. Model validation and testing")
