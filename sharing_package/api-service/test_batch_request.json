@@ -1,0 +1,36 @@
+{
+  "customers": [
+    {
+      "cliente": "CUST001",
+      "identificador_unico": "ID001",
+      "edad": 35,
+      "ocupacion": "Ingeniero",
+      "fechaingresoempleo": "2020-01-15",
+      "nombreempleadorcliente": "Tech Company SA",
+      "cargoempleocliente": "Senior Engineer",
+      "saldo": 5000.0,
+      "monto_letra": 250.0,
+      "fecha_inicio": "2019-06-01",
+      "sexo": "M",
+      "ciudad": "San José",
+      "pais": "Costa Rica",
+      "estado_civil": "Casado"
+    },
+    {
+      "cliente": "CUST002",
+      "identificador_unico": "ID002",
+      "edad": 28,
+      "ocupacion": "Contador",
+      "fechaingresoempleo": "2021-03-10",
+      "nombreempleadorcliente": "Finance Corp",
+      "cargoempleocliente": "Junior Accountant",
+      "saldo": 2500.0,
+      "monto_letra": 150.0,
+      "fecha_inicio": "2020-08-15",
+      "sexo": "F",
+      "ciudad": "Cartago",
+      "pais": "Costa Rica",
+      "estado_civil": "Soltero"
+    }
+  ]
+}

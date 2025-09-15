@@ -1,0 +1,33 @@
+{
+  "prediction_metadata": {
+    "generation_date": "2025-09-14 11:33:34",
+    "model_version": "XGBoost_v1.0_Final",
+    "total_customers": 29319,
+    "model_rmse": 527.24,
+    "confidence_level": "90%"
+  },
+  "income_statistics": {
+    "mean_predicted_income": 1745.17,
+    "median_predicted_income": 1769.42,
+    "min_predicted_income": 1513.04,
+    "max_predicted_income": 2172.78,
+    "std_predicted_income": 143.32
+  },
+  "confidence_analysis": {
+    "average_ci_width": 1265.95,
+    "median_ci_width": 1265.95,
+    "high_confidence_customers": 0,
+    "review_required_customers": 29319
+  },
+  "business_segments": {
+    "MIDDLE_INCOME_GROWTH": 29232,
+    "HIGH_INCOME_STABLE": 87
+  },
+  "business_priorities": {
+    "REVIEW_REQUIRED": 29319
+  },
+  "confidence_distribution": {
+    "MEDIUM_CONFIDENCE": 29232,
+    "LOWER_CONFIDENCE": 87
+  }
+}

@@ -1,0 +1,16 @@
+feature_name,feature_type
+ocupacion_consolidated_freq,frequency
+nombreempleadorcliente_consolidated_freq,frequency
+balance_to_payment_ratio,other
+fecha_inicio_days,other
+edad,basic
+fechaingresoempleo_days,other
+professional_stability_score,other
+cargoempleocliente_consolidated_freq,frequency
+saldo,basic
+employment_years,other
+monto_letra,basic
+location_x_occupation,interaction
+contract_duration,other
+payment_per_age,other
+fecha_vencimiento_days,other

@@ -1,0 +1,16 @@
+{
+  "cliente": "CUST001",
+  "identificador_unico": "ID001",
+  "edad": 35,
+  "ocupacion": "Ingeniero",
+  "fechaingresoempleo": "2020-01-15",
+  "nombreempleadorcliente": "Tech Company SA",
+  "cargoempleocliente": "Senior Engineer",
+  "saldo": 5000.0,
+  "monto_letra": 250.0,
+  "fecha_inicio": "2019-06-01",
+  "sexo": "M",
+  "ciudad": "San José",
+  "pais": "Costa Rica",
+  "estado_civil": "Casado"
+}

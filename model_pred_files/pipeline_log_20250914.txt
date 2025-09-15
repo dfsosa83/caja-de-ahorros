@@ -1,0 +1,187 @@
+[2025-09-14 11:57:44] 🧪 SINGLE CUSTOMER PIPELINE TEST
+[2025-09-14 11:57:44] ================================================================================
+[2025-09-14 11:57:44] 🎯 OBJECTIVE: Test pipeline with first customer (9-706-693)
+[2025-09-14 11:57:44] 📋 CUSTOMER: 3642 - JARDINERO - Age 47
+[2025-09-14 11:57:44] ================================================================================
+[2025-09-14 11:57:44] 🚀 COMPLETE END-TO-END PRODUCTION PIPELINE
+[2025-09-14 11:57:44] ================================================================================
+[2025-09-14 11:57:44] 🎯 OBJECTIVE: Raw data → Clean features → Predictions → Master dataset
+[2025-09-14 11:57:44] 📋 PIPELINE: Part 1 → Part 2 → Part 3 → Complete
+[2025-09-14 11:57:44] ================================================================================
+[2025-09-14 11:57:44] 
+📋 STEP 0: ENVIRONMENT VALIDATION
+[2025-09-14 11:57:44] 🔍 VALIDATING FILE PATHS AND DEPENDENCIES
+[2025-09-14 11:57:44] ============================================================
+[2025-09-14 11:57:44] ✅ raw_customer_data: .\data\production\single_customer_test.csv
+[2025-09-14 11:57:44] ✅ single_customer_test: .\data\production\single_customer_test.csv
+[2025-09-14 11:57:44] ✅ trained_model: .\models\production\production_model_catboost_all_data.pkl
+[2025-09-14 11:57:44] ✅ frequency_mappings: .\models\production\production_frequency_mappings_catboost.pkl
+[2025-09-14 11:57:44] ✅ predictions: .\model_pred_files
+[2025-09-14 11:57:44] ✅ temp_data: .\data\temp
+[2025-09-14 11:57:44] ✅ All file paths validated successfully
+[2025-09-14 11:57:44] 
+📋 STEP 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-14 11:57:44] 
+🚀 PART 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-14 11:57:44] ============================================================
+[2025-09-14 11:57:45] ✅ Part 1 completed: (1, 13)
+[2025-09-14 11:57:45] 
+📋 STEP 2: MODEL INFERENCE & PREDICTIONS
+[2025-09-14 11:57:45] 
+🚀 PART 2: MODEL INFERENCE & PREDICTIONS
+[2025-09-14 11:57:45] ============================================================
+[2025-09-14 11:57:47] ✅ Part 2 completed: (1, 9)
+[2025-09-14 11:57:47] 
+📋 STEP 3: BUSINESS FORMATTING & INCREMENTAL STORAGE
+[2025-09-14 11:57:47] 
+🚀 PART 3: BUSINESS FORMATTING & INCREMENTAL STORAGE
+[2025-09-14 11:57:47] ============================================================
+[2025-09-14 11:57:47] ✅ Part 3 completed: Incremental storage successful
+[2025-09-14 11:57:47] 
+🎉 COMPLETE PIPELINE SUCCESS!
+[2025-09-14 11:57:47] ============================================================
+[2025-09-14 11:57:47] ⏱️  Processing time: 2.22 seconds
+[2025-09-14 11:57:47] 👥 Customers processed: 1
+[2025-09-14 11:57:47] 💰 Average predicted income: $1,858.93
+[2025-09-14 11:57:47] 📊 Total predictions in master: 1
+[2025-09-14 11:57:47] 🆔 Unique customers: 1
+[2025-09-14 11:57:47] 
+📂 OUTPUT FILES:
+[2025-09-14 11:57:47]    📄 master_predictions.csv
+[2025-09-14 11:57:47]    📄 master_predictions.json
+[2025-09-14 11:57:47]    📁 archive/ (for old predictions)
+[2025-09-14 11:57:47]    📝 pipeline_log_20250914.txt
+[2025-09-14 11:57:47] 
+🎯 PIPELINE COMPLETED SUCCESSFULLY!
+[2025-09-14 11:57:47]    Ready for business use and system integration
+[2025-09-14 11:57:47] 
+🧹 CLEANING UP TEMPORARY FILES
+[2025-09-14 11:57:47] 🗑️  Removed: clean_data_20250914_115744.csv
+[2025-09-14 11:57:47] 🗑️  Removed: predictions_20250914_115744.csv
+[2025-09-14 11:57:47] 
+🎉 SINGLE CUSTOMER TEST RESULTS:
+[2025-09-14 11:57:47]    ✅ Status: SUCCESS
+[2025-09-14 11:57:47]    ✅ Processing time: 2.22 seconds
+[2025-09-14 11:57:47]    ✅ Customers processed: 1
+[2025-09-14 11:57:47]    ✅ Expected: 1 customer
+[2025-09-14 11:57:47]    🎯 SINGLE CUSTOMER TEST: PASSED
+[2025-09-14 11:57:47] 
+🔄 Restored original input file: .\data\production\final_info_clientes.csv
+[2025-09-14 11:58:19] 📊 PIPELINE STATUS CHECK
+[2025-09-14 11:58:19] ==================================================
+[2025-09-14 11:58:19] ✅ Master dataset exists: 1 predictions
+[2025-09-14 11:58:19] 🆔 Unique customers: 1
+[2025-09-14 11:58:19] 📅 Date range: 2025-09-14 11:57:47 to 2025-09-14 11:57:47
+[2025-09-14 11:58:19] 💾 File size: 0.0 MB
+[2025-09-14 12:07:17] 📊 PIPELINE STATUS CHECK
+[2025-09-14 12:07:17] ==================================================
+[2025-09-14 12:07:17] ✅ Master dataset exists: 1 predictions
+[2025-09-14 12:07:17] 🆔 Unique customers: 1
+[2025-09-14 12:07:17] 📅 Date range: 2025-09-14 11:57:47 to 2025-09-14 11:57:47
+[2025-09-14 12:07:17] 💾 File size: 0.0 MB
+[2025-09-14 12:07:55] 🚀 COMPLETE END-TO-END PRODUCTION PIPELINE
+[2025-09-14 12:07:55] ================================================================================
+[2025-09-14 12:07:55] 🎯 OBJECTIVE: Raw data → Clean features → Predictions → Master dataset
+[2025-09-14 12:07:55] 📋 PIPELINE: Part 1 → Part 2 → Part 3 → Complete
+[2025-09-14 12:07:55] ================================================================================
+[2025-09-14 12:07:55] 
+📋 STEP 0: ENVIRONMENT VALIDATION
+[2025-09-14 12:07:55] 🔍 VALIDATING FILE PATHS AND DEPENDENCIES
+[2025-09-14 12:07:55] ============================================================
+[2025-09-14 12:07:55] ✅ raw_customer_data: .\data\production\final_info_clientes.csv
+[2025-09-14 12:07:55] ❌ single_customer_test: .\data\production\single_customer_test.csv (NOT FOUND)
+[2025-09-14 12:07:55] ✅ trained_model: .\models\production\production_model_catboost_all_data.pkl
+[2025-09-14 12:07:55] ✅ frequency_mappings: .\models\production\production_frequency_mappings_catboost.pkl
+[2025-09-14 12:07:55] ✅ predictions: .\model_pred_files
+[2025-09-14 12:07:55] ✅ temp_data: .\data\temp
+[2025-09-14 12:07:55] 🚨 MISSING FILES DETECTED:
+[2025-09-14 12:07:55]    ❌ single_customer_test: .\data\production\single_customer_test.csv
+[2025-09-14 12:07:55] 
+🔧 TEAM ACTION REQUIRED:
+[2025-09-14 12:07:55]    1. Update paths in ProductionConfig class
+[2025-09-14 12:07:55]    2. Ensure all model files are in correct locations
+[2025-09-14 12:07:55]    3. Verify input data file exists
+[2025-09-14 12:07:55] ❌ Pipeline aborted: Environment validation failed
+[2025-09-14 12:09:18] 🚀 COMPLETE END-TO-END PRODUCTION PIPELINE
+[2025-09-14 12:09:18] ================================================================================
+[2025-09-14 12:09:18] 🎯 OBJECTIVE: Raw data → Clean features → Predictions → Master dataset
+[2025-09-14 12:09:18] 📋 PIPELINE: Part 1 → Part 2 → Part 3 → Complete
+[2025-09-14 12:09:18] ================================================================================
+[2025-09-14 12:09:18] 
+📋 STEP 0: ENVIRONMENT VALIDATION
+[2025-09-14 12:09:18] 🔍 VALIDATING FILE PATHS AND DEPENDENCIES
+[2025-09-14 12:09:18] ============================================================
+[2025-09-14 12:09:18] ✅ raw_customer_data: .\data\production\final_info_clientes.csv
+[2025-09-14 12:09:18] ❌ single_customer_test: .\data\production\single_customer_test.csv (NOT FOUND)
+[2025-09-14 12:09:18] ✅ trained_model: .\models\production\production_model_catboost_all_data.pkl
+[2025-09-14 12:09:18] ✅ frequency_mappings: .\models\production\production_frequency_mappings_catboost.pkl
+[2025-09-14 12:09:18] ✅ predictions: .\model_pred_files
+[2025-09-14 12:09:18] ✅ temp_data: .\data\temp
+[2025-09-14 12:09:18] 🚨 MISSING FILES DETECTED:
+[2025-09-14 12:09:18]    ❌ single_customer_test: .\data\production\single_customer_test.csv
+[2025-09-14 12:09:18] 
+🔧 TEAM ACTION REQUIRED:
+[2025-09-14 12:09:18]    1. Update paths in ProductionConfig class
+[2025-09-14 12:09:18]    2. Ensure all model files are in correct locations
+[2025-09-14 12:09:18]    3. Verify input data file exists
+[2025-09-14 12:09:18] ❌ Pipeline aborted: Environment validation failed
+[2025-09-14 12:10:11] 🚀 COMPLETE END-TO-END PRODUCTION PIPELINE
+[2025-09-14 12:10:11] ================================================================================
+[2025-09-14 12:10:11] 🎯 OBJECTIVE: Raw data → Clean features → Predictions → Master dataset
+[2025-09-14 12:10:11] 📋 PIPELINE: Part 1 → Part 2 → Part 3 → Complete
+[2025-09-14 12:10:11] ================================================================================
+[2025-09-14 12:10:11] 
+📋 STEP 0: ENVIRONMENT VALIDATION
+[2025-09-14 12:10:11] 🔍 VALIDATING FILE PATHS AND DEPENDENCIES
+[2025-09-14 12:10:11] ============================================================
+[2025-09-14 12:10:11] ✅ raw_customer_data: .\data\production\final_info_clientes.csv
+[2025-09-14 12:10:11] ✅ trained_model: .\models\production\production_model_catboost_all_data.pkl
+[2025-09-14 12:10:11] ✅ frequency_mappings: .\models\production\production_frequency_mappings_catboost.pkl
+[2025-09-14 12:10:11] ✅ predictions: .\model_pred_files
+[2025-09-14 12:10:11] ✅ temp_data: .\data\temp
+[2025-09-14 12:10:11] ✅ All file paths validated successfully
+[2025-09-14 12:10:11] 
+📋 STEP 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-14 12:10:11] 
+🚀 PART 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-14 12:10:11] ============================================================
+[2025-09-14 12:10:12] ✅ Part 1 completed: (29319, 13)
+[2025-09-14 12:10:12] 
+📋 STEP 2: MODEL INFERENCE & PREDICTIONS
+[2025-09-14 12:10:12] 
+🚀 PART 2: MODEL INFERENCE & PREDICTIONS
+[2025-09-14 12:10:12] ============================================================
+[2025-09-14 12:10:15] ✅ Part 2 completed: (29319, 9)
+[2025-09-14 12:10:15] 
+📋 STEP 3: BUSINESS FORMATTING & INCREMENTAL STORAGE
+[2025-09-14 12:10:15] 
+🚀 PART 3: BUSINESS FORMATTING & INCREMENTAL STORAGE
+[2025-09-14 12:10:15] ============================================================
+[2025-09-14 12:10:20] ✅ Part 3 completed: Incremental storage successful
+[2025-09-14 12:10:20] 
+🎉 COMPLETE PIPELINE SUCCESS!
+[2025-09-14 12:10:20] ============================================================
+[2025-09-14 12:10:20] ⏱️  Processing time: 8.37 seconds
+[2025-09-14 12:10:20] 👥 Customers processed: 29,319
+[2025-09-14 12:10:20] 💰 Average predicted income: $1,745.17
+[2025-09-14 12:10:20] 📊 Total predictions in master: 29,319
+[2025-09-14 12:10:20] 🆔 Unique customers: 29,319
+[2025-09-14 12:10:20] 
+📂 OUTPUT FILES:
+[2025-09-14 12:10:20]    📄 master_predictions.csv
+[2025-09-14 12:10:20]    📄 master_predictions.json
+[2025-09-14 12:10:20]    📁 archive/ (for old predictions)
+[2025-09-14 12:10:20]    📝 pipeline_log_20250914.txt
+[2025-09-14 12:10:20] 
+🎯 PIPELINE COMPLETED SUCCESSFULLY!
+[2025-09-14 12:10:20]    Ready for business use and system integration
+[2025-09-14 12:10:20] 
+🧹 CLEANING UP TEMPORARY FILES
+[2025-09-14 12:10:20] 🗑️  Removed: clean_data_20250914_121011.csv
+[2025-09-14 12:10:20] 🗑️  Removed: predictions_20250914_121011.csv
+[2025-09-14 12:10:30] 📊 PIPELINE STATUS CHECK
+[2025-09-14 12:10:30] ==================================================
+[2025-09-14 12:10:30] ✅ Master dataset exists: 29,319 predictions
+[2025-09-14 12:10:30] 🆔 Unique customers: 29,319
+[2025-09-14 12:10:30] 📅 Date range: 2025-09-14 12:10:15 to 2025-09-14 12:10:15
+[2025-09-14 12:10:30] 💾 File size: 5.88 MB
