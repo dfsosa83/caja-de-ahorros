@@ -1,0 +1,515 @@
+Voting System
+
+train_df_enhanced = train_df_balanced.copy()
+print(f"✅ Training data balanced and ready for modeling: {train_df_enhanced.shape}")
+
+# %%
+# =============================================================================
+# NOISE FEATURE GENERATION FOR VOTING SYSTEM
+# =============================================================================
+print("\n🎲 GENERATING NOISE FEATURES FOR FEATURE SELECTION")
+print("-" * 60)
+
+import numpy as np
+
+# Set the random seed for reproducibility
+np.random.seed(42)
+
+# Get data size from your enhanced training set
+data_size = len(train_df_enhanced)
+print(f"   📊 Data size: {data_size:,} records")
+
+# Generate a wider variety of noise features
+print("   🔄 Generating noise features...")
+
+# Gaussian noise with different means and standard deviations
+noise_gaussian_1 = np.random.normal(loc=0, scale=1, size=data_size)
+noise_gaussian_2 = np.random.normal(loc=0, scale=2, size=data_size)
+noise_gaussian_3 = np.random.normal(loc=0, scale=3, size=data_size)
+noise_gaussian_4 = np.random.normal(loc=5, scale=1, size=data_size)  # Different mean
+
+# Uniform noise with different ranges
+noise_uniform_1 = np.random.uniform(low=-1, high=1, size=data_size)
+noise_uniform_2 = np.random.uniform(low=0, high=10, size=data_size)
+noise_uniform_3 = np.random.uniform(low=-5, high=5, size=data_size)
+noise_uniform_4 = np.random.uniform(low=-10, high=10, size=data_size)  # Wider range
+
+# Poisson noise with different lambda values
+lambda_value = 3
+poisson_noise_1 = np.random.poisson(lam=lambda_value, size=data_size)
+poisson_noise_2 = np.random.poisson(lam=lambda_value * 2, size=data_size)
+poisson_noise_3 = np.random.poisson(lam=lambda_value * 3, size=data_size)
+
+# Add more complex noise types
+# Random walk (cumulative sum of random steps)
+random_walk = np.cumsum(np.random.normal(0, 1, data_size))
+
+# Sinusoidal noise (periodic pattern)
+x = np.linspace(0, 10, data_size)
+sinusoidal_noise = np.sin(x) + np.random.normal(0, 0.1, data_size)
+
+# Add the noise variables to the enhanced training DataFrame
+train_df_enhanced['Gaussian_Noise_Std1'] = noise_gaussian_1
+train_df_enhanced['Gaussian_Noise_Std2'] = noise_gaussian_2
+train_df_enhanced['Gaussian_Noise_Mean5'] = noise_gaussian_4
+train_df_enhanced['Uniform_Noise_Range1'] = noise_uniform_1
+train_df_enhanced['Uniform_Noise_Range10'] = noise_uniform_4
+train_df_enhanced['Poisson_Noise_Lambda3'] = poisson_noise_1
+train_df_enhanced['RandomWalk_Noise'] = random_walk
+train_df_enhanced['Sinusoidal_Noise'] = sinusoidal_noise
+
+# Create a list of all noise feature names for later use
+noise_features = ['Gaussian_Noise_Std1', 'Gaussian_Noise_Std2', 'Gaussian_Noise_Mean5', 
+                 'Uniform_Noise_Range1', 'Uniform_Noise_Range10', 'Poisson_Noise_Lambda3',
+                 'RandomWalk_Noise', 'Sinusoidal_Noise']
+
+print(f"   ✅ Generated {len(noise_features)} noise features:")
+for i, noise_feat in enumerate(noise_features, 1):
+    print(f"      {i}. {noise_feat}")
+
+print(f"\n   📈 Training set shape after adding noise: {train_df_enhanced.shape}")
+print("✅ Noise feature generation complete!")
+
+🎲 GENERATING NOISE FEATURES FOR FEATURE SELECTION
+------------------------------------------------------------
+   📊 Data size: 27,177 records
+   🔄 Generating noise features...
+   ✅ Generated 8 noise features:
+      1. Gaussian_Noise_Std1
+      2. Gaussian_Noise_Std2
+      3. Gaussian_Noise_Mean5
+      4. Uniform_Noise_Range1
+      5. Uniform_Noise_Range10
+      6. Poisson_Noise_Lambda3
+      7. RandomWalk_Noise
+      8. Sinusoidal_Noise
+
+   📈 Training set shape after adding noise: (27177, 109)
+✅ Noise feature generation complete!
+
+# Define the features (X) and target variable (y)
+X = train_df_enhanced.drop(['cliente', 'identificador_unico', 'ingresos_reportados','was_winsorized'], axis=1)
+y = train_df_enhanced['ingresos_reportados']
+
+# Initialize enhanced regression models for voting system
+model1 = RandomForestRegressor(
+    n_estimators=600,
+    max_depth=25,
+    min_samples_split=5,
+    min_samples_leaf=2,
+    max_features='sqrt',
+    random_state=42,
+    n_jobs=-1
+)
+
+model2 = lgb.LGBMRegressor(
+    n_estimators=600,
+    max_depth=16,
+    learning_rate=0.01,
+    num_leaves=100,
+    min_child_samples=20,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    random_state=42,
+    verbose=-1
+)
+
+model3 = Ridge(
+    alpha=1.0,
+    max_iter=2000,
+    random_state=42
+)
+
+# Fit the models
+model1.fit(X, y)
+model2.fit(X, y)
+model3.fit(X, y)
+
+# %%
+# =============================================================================
+# ENHANCED FEATURE SELECTION WITH NOISE-BASED VOTING SYSTEM
+# =============================================================================
+print("\n🗳️ ENHANCED FEATURE SELECTION WITH VOTING")
+print("-" * 60)
+
+# Get feature importances or coefficients from trained models
+importances1 = model1.feature_importances_
+importances2 = model2.feature_importances_
+importances3 = np.abs(model3.coef_)  # Use absolute values for Ridge coefficients
+
+print(f"   📊 Total features available: {len(X.columns)}")
+print(f"   🎲 Noise features: {len(noise_features)}")
+
+# =============================================================================
+# STEP 1: CREATE COMPREHENSIVE FEATURE IMPORTANCE DATAFRAME
+# =============================================================================
+print("\n📋 Step 1: Creating feature importance rankings...")
+
+# Create comprehensive feature importance DataFrame
+feature_importance_df = pd.DataFrame({
+    'Feature': X.columns,
+    'RF_Importance': importances1,
+    'LGBM_Importance': importances2,
+    'Ridge_Importance': importances3
+})
+
+# Add noise indicator
+feature_importance_df['Is_Noise'] = feature_importance_df['Feature'].isin(noise_features)
+
+# Calculate average importance (weighted to give more importance to tree models)
+feature_importance_df['Avg_Importance'] = (
+    0.4 * feature_importance_df['RF_Importance'] + 
+    0.4 * feature_importance_df['LGBM_Importance'] + 
+    0.2 * feature_importance_df['Ridge_Importance']
+)
+
+# =============================================================================
+# STEP 2: VOTING SYSTEM WITH MULTIPLE THRESHOLDS
+# =============================================================================
+print("\n🗳️ Step 2: Implementing multi-threshold voting system...")
+
+# Define multiple selection thresholds for each model (more lenient)
+rf_threshold = np.percentile(importances1, 50)  # Top 40% of features
+lgbm_threshold = np.percentile(importances2, 50)  # Top 40% of features
+ridge_threshold = np.percentile(importances3, 50)  # Top 30% of features
+
+print(f"   🌳 Random Forest threshold: {rf_threshold:.6f}")
+print(f"   🚀 LightGBM threshold: {lgbm_threshold:.6f}")
+print(f"   📈 Ridge threshold: {ridge_threshold:.6f}")
+
+# Create voting columns
+feature_importance_df['RF_Vote'] = (feature_importance_df['RF_Importance'] >= rf_threshold).astype(int)
+feature_importance_df['LGBM_Vote'] = (feature_importance_df['LGBM_Importance'] >= lgbm_threshold).astype(int)
+feature_importance_df['Ridge_Vote'] = (feature_importance_df['Ridge_Importance'] >= ridge_threshold).astype(int)
+
+# Calculate total votes
+feature_importance_df['Total_Votes'] = (
+    feature_importance_df['RF_Vote'] + 
+    feature_importance_df['LGBM_Vote'] + 
+    feature_importance_df['Ridge_Vote']
+)
+
+# =============================================================================
+# STEP 3: NOISE-BASED THRESHOLDS (MORE LENIENT)
+# =============================================================================
+print("\n🎯 Step 3: Calculating noise-based thresholds...")
+
+# Sort by average importance (descending)
+feature_importance_df = feature_importance_df.sort_values('Avg_Importance', ascending=False)
+
+# Get noise feature statistics
+noise_df = feature_importance_df[feature_importance_df['Is_Noise']].copy()
+real_features_df = feature_importance_df[~feature_importance_df['Is_Noise']].copy()
+
+if len(noise_df) > 0:
+    # Calculate noise statistics
+    noise_importances = noise_df['Avg_Importance'].values
+    noise_votes = noise_df['Total_Votes'].values
+    
+    noise_importance_mean = np.mean(noise_importances)
+    noise_importance_std = np.std(noise_importances)
+    noise_importance_max = np.max(noise_importances)
+    noise_votes_max = np.max(noise_votes)
+    
+    print(f"   📊 Noise importance stats:")
+    print(f"      Mean: {noise_importance_mean:.6f}")
+    print(f"      Std:  {noise_importance_std:.6f}")
+    print(f"      Max:  {noise_importance_max:.6f}")
+    print(f"      Max votes: {noise_votes_max}")
+    
+    # =============================================================================
+    # STEP 4: MULTIPLE SELECTION STRATEGIES (LESS RESTRICTIVE)
+    # =============================================================================
+    print("\n🎯 Step 4: Applying multiple selection strategies...")
+    
+    # Strategy 1: Features better than best noise (traditional approach)
+    best_noise_rank = feature_importance_df[feature_importance_df['Is_Noise']].index.min()
+    strategy1_features = feature_importance_df.iloc[:best_noise_rank]['Feature'].tolist()
+    strategy1_features = [f for f in strategy1_features if f not in noise_features]
+    
+    # Strategy 2: Features better than 75th percentile of noise (more lenient)
+    noise_75th_percentile = np.percentile(noise_importances, 75)
+    strategy2_features = feature_importance_df[
+        (feature_importance_df['Avg_Importance'] > noise_75th_percentile) & 
+        (~feature_importance_df['Is_Noise'])
+    ]['Feature'].tolist()
+    
+    # Strategy 3: Features with more votes than best noise feature
+    strategy3_features = feature_importance_df[
+        (feature_importance_df['Total_Votes'] > noise_votes_max) & 
+        (~feature_importance_df['Is_Noise'])
+    ]['Feature'].tolist()
+    
+    # Strategy 4: Features above noise mean + 0.5*std (lenient statistical threshold)
+    statistical_threshold = noise_importance_mean + 0.5 * noise_importance_std
+    strategy4_features = feature_importance_df[
+        (feature_importance_df['Avg_Importance'] > statistical_threshold) & 
+        (~feature_importance_df['Is_Noise'])
+    ]['Feature'].tolist()
+    
+    # Strategy 5: Features with at least 1 vote and above noise mean
+    strategy5_features = feature_importance_df[
+        (feature_importance_df['Total_Votes'] >= 1) & 
+        (feature_importance_df['Avg_Importance'] > noise_importance_mean) & 
+        (~feature_importance_df['Is_Noise'])
+    ]['Feature'].tolist()
+    
+    print(f"   📈 Strategy 1 (better than best noise): {len(strategy1_features)} features")
+    print(f"   📈 Strategy 2 (better than 75th percentile noise): {len(strategy2_features)} features")
+    print(f"   📈 Strategy 3 (more votes than best noise): {len(strategy3_features)} features")
+    print(f"   📈 Strategy 4 (statistical threshold): {len(strategy4_features)} features")
+    print(f"   📈 Strategy 5 (1+ votes + above noise mean): {len(strategy5_features)} features")
+    
+    # =============================================================================
+    # STEP 5: CONSENSUS-BASED FINAL SELECTION (FLEXIBLE)
+    # =============================================================================
+    print("\n🤝 Step 5: Creating consensus-based final selection...")
+    
+    # Collect all unique features from all strategies
+    all_candidate_features = set()
+    all_candidate_features.update(strategy1_features)
+    all_candidate_features.update(strategy2_features)
+    all_candidate_features.update(strategy3_features)
+    all_candidate_features.update(strategy4_features)
+    all_candidate_features.update(strategy5_features)
+    
+    # Count how many strategies support each feature
+    feature_strategy_support = {}
+    for feature in all_candidate_features:
+        support_count = 0
+        if feature in strategy1_features: support_count += 1
+        if feature in strategy2_features: support_count += 1
+        if feature in strategy3_features: support_count += 1
+        if feature in strategy4_features: support_count += 1
+        if feature in strategy5_features: support_count += 1
+        feature_strategy_support[feature] = support_count
+    
+    # Select features supported by at least 2 strategies (flexible threshold)
+    min_strategy_support = 1
+    consensus_features = [
+        feature for feature, support in feature_strategy_support.items() 
+        if support >= min_strategy_support
+    ]
+    
+    # If we get too few features, lower the threshold
+    if len(consensus_features) < 15:
+        min_strategy_support = 1
+        consensus_features = [
+            feature for feature, support in feature_strategy_support.items() 
+            if support >= min_strategy_support
+        ]
+        print(f"   ⚠️ Lowered threshold to 1 strategy support due to low feature count")
+    
+    # Add top features by importance if we still have too few
+    if len(consensus_features) < 20:
+        top_by_importance = real_features_df.head(15)['Feature'].tolist()
+        consensus_features.extend([f for f in top_by_importance if f not in consensus_features])
+        print(f"   ⚠️ Added top features by importance to reach minimum threshold")
+    
+    selected_features_final = consensus_features
+    
+else:
+    print("   ⚠️ No noise features found! Using vote-based selection...")
+    # Fallback: select features with at least 1 vote
+    selected_features_final = feature_importance_df[
+        (feature_importance_df['Total_Votes'] >= 1) & 
+        (~feature_importance_df['Is_Noise'])
+    ]['Feature'].tolist()
+
+# =============================================================================
+# STEP 6: FINAL VALIDATION AND CLEANUP
+# =============================================================================
+print("\n✅ Step 6: Final validation and cleanup...")
+
+# Remove any noise features that might have slipped through
+selected_features_final = [f for f in selected_features_final if f not in noise_features]
+
+# Ensure we have a reasonable number of features (15-50 range)
+if len(selected_features_final) < 15:
+    print(f"   ⚠️ Too few features ({len(selected_features_final)}), adding top features by importance...")
+    additional_needed = 15 - len(selected_features_final)
+    top_features = real_features_df.head(additional_needed + len(selected_features_final))['Feature'].tolist()
+    for feature in top_features:
+        if feature not in selected_features_final:
+            selected_features_final.append(feature)
+            if len(selected_features_final) >= 15:
+                break
+
+elif len(selected_features_final) > 30:
+    print(f"   ⚠️ Too many features ({len(selected_features_final)}), keeping top 50...")
+    # Keep top 50 by average importance
+    feature_scores = feature_importance_df[
+        feature_importance_df['Feature'].isin(selected_features_final)
+    ].sort_values('Avg_Importance', ascending=False)
+    selected_features_final = feature_scores.head(15)['Feature'].tolist()
+
+print(f"\n🎯 FINAL RESULTS:")
+print(f"   ✅ Selected features: {len(selected_features_final)}")
+print(f"   🎲 Noise features excluded: {len(noise_features)}")
+print(f"   📊 Selection rate: {len(selected_features_final)/len(real_features_df)*100:.1f}% of real features")
+
+# =============================================================================
+# STEP 7: DETAILED REPORTING AND VISUALIZATION
+# =============================================================================
+print("\n📊 Step 7: Creating detailed reports...")
+
+# Create final feature report
+final_feature_report = feature_importance_df[
+    feature_importance_df['Feature'].isin(selected_features_final)
+].sort_values('Avg_Importance', ascending=False)
+
+print(f"\n📋 TOP 10 SELECTED FEATURES:")
+print(final_feature_report[['Feature', 'Avg_Importance', 'Total_Votes']].head(10).to_string(index=False))
+
+# Show noise feature positions for reference
+if len(noise_df) > 0:
+    print(f"\n🎲 NOISE FEATURE POSITIONS (for reference):")
+    noise_positions = noise_df[['Feature', 'Avg_Importance', 'Total_Votes']].head(5)
+    print(noise_positions.to_string(index=False))
+
+# =============================================================================
+# STEP 8: VISUALIZATION
+# =============================================================================
+print("\n📈 Step 8: Creating visualizations...")
+
+# Create comprehensive visualization
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 12))
+
+# Plot 1: Feature votes
+feature_plot_df = feature_importance_df.head(50)  # Show top 50 for readability
+bars1 = ax1.bar(range(len(feature_plot_df)), feature_plot_df['Total_Votes'])
+
+# Color coding
+for i, (idx, row) in enumerate(feature_plot_df.iterrows()):
+    if row['Feature'] in selected_features_final:
+        bars1[i].set_color('green')  # Selected features
+    elif row['Is_Noise']:
+        bars1[i].set_color('red')    # Noise features
+    else:
+        bars1[i].set_color('lightgray')  # Rejected features
+
+ax1.set_xticks(range(len(feature_plot_df)))
+ax1.set_xticklabels(feature_plot_df['Feature'], rotation=45, ha='right')
+ax1.set_ylabel('Total Votes')
+ax1.set_title('Feature Selection Results - Voting Pattern')
+ax1.legend(['Selected', 'Noise', 'Rejected'])
+
+# Plot 2: Feature importance scores
+bars2 = ax2.bar(range(len(feature_plot_df)), feature_plot_df['Avg_Importance'])
+
+# Same color coding
+for i, (idx, row) in enumerate(feature_plot_df.iterrows()):
+    if row['Feature'] in selected_features_final:
+        bars2[i].set_color('green')
+    elif row['Is_Noise']:
+        bars2[i].set_color('red')
+    else:
+        bars2[i].set_color('lightgray')
+
+# Add threshold lines
+if len(noise_df) > 0:
+    ax2.axhline(y=noise_importance_mean, color='orange', linestyle='--', 
+                label=f'Noise mean: {noise_importance_mean:.4f}')
+    ax2.axhline(y=noise_importance_max, color='red', linestyle='--', 
+                label=f'Best noise: {noise_importance_max:.4f}')
+
+ax2.set_xticks(range(len(feature_plot_df)))
+ax2.set_xticklabels(feature_plot_df['Feature'], rotation=45, ha='right')
+ax2.set_ylabel('Average Importance')
+ax2.set_title('Feature Selection Results - Importance Scores')
+ax2.legend()
+
+plt.tight_layout()
+plt.show()
+
+print(f"\n🎯 FINAL SELECTED FEATURES ({len(selected_features_final)}):")
+for i, feature in enumerate(selected_features_final, 1):
+    importance = feature_importance_df[feature_importance_df['Feature'] == feature]['Avg_Importance'].iloc[0]
+    votes = feature_importance_df[feature_importance_df['Feature'] == feature]['Total_Votes'].iloc[0]
+    print(f"   {i:2d}. {feature:<35} (Importance: {importance:.6f}, Votes: {votes})")
+
+print("\n✅ Enhanced feature selection complete!")
+print(f"📊 Ready to train final model with {len(selected_features_final)} carefully selected features")
+
+🗳️ ENHANCED FEATURE SELECTION WITH VOTING
+------------------------------------------------------------
+   📊 Total features available: 105
+   🎲 Noise features: 8
+
+📋 Step 1: Creating feature importance rankings...
+
+🗳️ Step 2: Implementing multi-threshold voting system...
+   🌳 Random Forest threshold: 0.002595
+   🚀 LightGBM threshold: 42.000000
+   📈 Ridge threshold: 16.995173
+
+🎯 Step 3: Calculating noise-based thresholds...
+   📊 Noise importance stats:
+      Mean: 722.322479
+      Std:  190.572405
+      Max:  957.089435
+      Max votes: 2
+
+🎯 Step 4: Applying multiple selection strategies...
+   📈 Strategy 1 (better than best noise): 89 features
+   📈 Strategy 2 (better than 75th percentile noise): 8 features
+   📈 Strategy 3 (more votes than best noise): 14 features
+   📈 Strategy 4 (statistical threshold): 7 features
+   📈 Strategy 5 (1+ votes + above noise mean): 10 features
+
+🤝 Step 5: Creating consensus-based final selection...
+
+✅ Step 6: Final validation and cleanup...
+   ⚠️ Too many features (89), keeping top 50...
+
+🎯 FINAL RESULTS:
+   ✅ Selected features: 15
+   🎲 Noise features excluded: 8
+   📊 Selection rate: 15.5% of real features
+
+📊 Step 7: Creating detailed reports...
+
+📋 TOP 10 SELECTED FEATURES:
+                                 Feature  Avg_Importance  Total_Votes
+                                    edad     1599.078871            2
+                 fechaingresoempleo_days     1301.219744            2
+                balance_to_payment_ratio     1200.019135            2
+                       fecha_inicio_days     1145.224483            2
+                                   saldo      992.816311            2
+                        employment_years      946.516184            2
+            professional_stability_score      834.561621            3
+                       contract_duration      810.420420            2
+nombreempleadorcliente_consolidated_freq      768.036532            2
+                   location_x_occupation      760.810132            2
+
+🎲 NOISE FEATURE POSITIONS (for reference):
+             Feature  Avg_Importance  Total_Votes
+    Sinusoidal_Noise      957.089435            2
+Uniform_Noise_Range1      818.599406            2
+    RandomWalk_Noise      787.689089            2
+Gaussian_Noise_Mean5      776.163202            2
+ Gaussian_Noise_Std1      751.762168            2
+
+📈 Step 8: Creating visualizations...
+
+🎯 FINAL SELECTED FEATURES (15):
+    1. edad                                (Importance: 1599.078871, Votes: 2)
+    2. fechaingresoempleo_days             (Importance: 1301.219744, Votes: 2)
+    3. balance_to_payment_ratio            (Importance: 1200.019135, Votes: 2)
+    4. fecha_inicio_days                   (Importance: 1145.224483, Votes: 2)
+    5. saldo                               (Importance: 992.816311, Votes: 2)
+    6. employment_years                    (Importance: 946.516184, Votes: 2)
+    7. professional_stability_score        (Importance: 834.561621, Votes: 3)
+    8. contract_duration                   (Importance: 810.420420, Votes: 2)
+    9. nombreempleadorcliente_consolidated_freq (Importance: 768.036532, Votes: 2)
+   10. location_x_occupation               (Importance: 760.810132, Votes: 2)
+   11. monto_letra                         (Importance: 691.459323, Votes: 2)
+   12. fecha_vencimiento_days              (Importance: 640.422088, Votes: 2)
+   13. balance_coverage_ratio              (Importance: 640.016818, Votes: 2)
+   14. ocupacion_consolidated_freq         (Importance: 608.410981, Votes: 2)
+   15. payment_per_age                     (Importance: 589.656204, Votes: 3)
+
+✅ Enhanced feature selection complete!
+📊 Ready to train final model with 15 carefully selected features
+
+

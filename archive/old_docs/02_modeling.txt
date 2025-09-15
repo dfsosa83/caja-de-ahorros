@@ -1,0 +1,1470 @@
+# %%
+# SECTION 5: ENHANCED FEATURE ENGINEERING WITH NEW LOAN FEATURES (DTYPE FIXED)
+# =============================================================================
+print("\n⚙️ ENHANCED FEATURE ENGINEERING SETUP (WITH LOAN FEATURES)")
+print("-" * 60)
+
+# =============================================================================
+# PREPROCESSING FUNCTION WITH PROPER DTYPE HANDLING
+# =============================================================================
+
+def preprocess_data_fixed(df):
+    """
+    Complete data preprocessing pipeline with proper dtype handling
+    """
+    df_processed = df.copy()
+
+    # 4.1: Handle Missing Values
+    print("   📋 Handling missing values...")
+
+    # Core numerical missing values
+    if 'monto_letra' in df_processed.columns:
+        df_processed['monto_letra_missing'] = df_processed['monto_letra'].isnull().astype('int32')
+        median_monto = df_processed['monto_letra'].median()
+        df_processed['monto_letra'] = df_processed['monto_letra'].fillna(median_monto).astype('float32')
+        print(f"      ✅ monto_letra: filled {df_processed['monto_letra_missing'].sum()} missing values")
+
+    # New loan features (high missing rate - special handling)
+    if 'monto_prestamo' in df_processed.columns:
+        missing_count = df_processed['monto_prestamo'].isnull().sum()
+        missing_pct = (missing_count / len(df_processed)) * 100
+
+        # Create missing flag (important feature!)
+        df_processed['monto_prestamo_missing'] = df_processed['monto_prestamo'].isnull().astype('int32')
+
+        # Fill with 0 (indicates no loan amount recorded)
+        df_processed['monto_prestamo'] = df_processed['monto_prestamo'].fillna(0).astype('float32')
+        print(f"      ✅ monto_prestamo: filled {missing_count:,} missing values ({missing_pct:.1f}%) with 0")
+
+    if 'tasa_prestamo' in df_processed.columns:
+        missing_count = df_processed['tasa_prestamo'].isnull().sum()
+        missing_pct = (missing_count / len(df_processed)) * 100
+
+        # Create missing flag (important feature!)
+        df_processed['tasa_prestamo_missing'] = df_processed['tasa_prestamo'].isnull().astype('int32')
+
+        # Fill with median of available rates (more meaningful than 0)
+        median_rate = df_processed['tasa_prestamo'].median()
+        df_processed['tasa_prestamo'] = df_processed['tasa_prestamo'].fillna(median_rate).astype('float32')
+        print(f"      ✅ tasa_prestamo: filled {missing_count:,} missing values ({missing_pct:.1f}%) with median ({median_rate:.2f})")
+
+    # Create derived features from new loan data
+    if 'monto_prestamo' in df_processed.columns and 'monto_letra' in df_processed.columns:
+        # Loan to payment ratio (when both available)
+        df_processed['loan_to_payment_ratio'] = (df_processed['monto_prestamo'] / (df_processed['monto_letra'] + 1)).astype('float32')
+        print(f"      ✅ Created loan_to_payment_ratio feature")
+
+    if 'monto_prestamo' in df_processed.columns:
+        # Has loan indicator (binary feature)
+        df_processed['has_loan_amount'] = (df_processed['monto_prestamo'] > 0).astype('int32')
+        print(f"      ✅ Created has_loan_amount indicator")
+
+    # 4.2: Convert Date Features
+    print("   📅 Converting date features...")
+    reference_date = pd.Timestamp('2020-01-01')
+    date_columns = ['fechaingresoempleo', 'fecha_inicio', 'fecha_vencimiento']
+
+    for date_col in date_columns:
+        if date_col in df_processed.columns:
+            # Convert to datetime
+            df_processed[date_col] = pd.to_datetime(df_processed[date_col], errors='coerce')
+
+            # Convert to days since reference
+            df_processed[f'{date_col}_days'] = ((df_processed[date_col] - reference_date).dt.days).astype('float32')
+
+            # Handle missing values
+            missing_count = df_processed[f'{date_col}_days'].isnull().sum()
+            if missing_count > 0:
+                df_processed[f'{date_col}_missing'] = df_processed[f'{date_col}_days'].isnull().astype('int32')
+                median_days = df_processed[f'{date_col}_days'].median()
+                df_processed[f'{date_col}_days'] = df_processed[f'{date_col}_days'].fillna(median_days).astype('float32')
+                print(f"      ✅ {date_col}: converted to days, filled {missing_count} missing")
+
+            # Drop original date column
+            df_processed.drop(columns=[date_col], inplace=True)
+
+    # 4.3: Encode Categorical Features (FIXED VERSION)
+    print("   🏷️  Encoding categorical features with proper dtypes...")
+
+    # Low cardinality - One-hot encoding with proper dtypes
+    low_cardinality = ['sexo_consolidated', 'estado_civil_consolidated', 'pais_consolidated', 'age_group']
+    existing_low_card = [col for col in low_cardinality if col in df_processed.columns]
+
+    for col in existing_low_card:
+        df_processed[col] = df_processed[col].fillna('Unknown')
+
+        # KEY FIX: Add dtype=int parameter and explicit conversion
+        dummies = pd.get_dummies(df_processed[col], prefix=col, drop_first=True, dtype='int32')
+
+        # Double-check conversion to int32
+        for dummy_col in dummies.columns:
+            dummies[dummy_col] = dummies[dummy_col].astype('int32')
+
+        df_processed = pd.concat([df_processed, dummies], axis=1)
+        df_processed.drop(columns=[col], inplace=True)
+        print(f"      ✅ {col}: created {len(dummies.columns)} dummy variables (int32)")
+
+    # High cardinality - Frequency encoding
+    high_cardinality = ['ocupacion_consolidated', 'ciudad_consolidated',
+                       'nombreempleadorcliente_consolidated', 'cargoempleocliente_consolidated']
+    existing_high_card = [col for col in high_cardinality if col in df_processed.columns]
+
+    for col in existing_high_card:
+        df_processed[col] = df_processed[col].fillna('Unknown')
+        freq_map = df_processed[col].value_counts().to_dict()
+        new_col_name = f'{col}_freq'
+        df_processed[new_col_name] = df_processed[col].map(freq_map).astype('int32')
+        df_processed.drop(columns=[col], inplace=True)
+        print(f"      ✅ {col}: frequency encoded (range: {df_processed[new_col_name].min()}-{df_processed[new_col_name].max()})")
+
+    return df_processed
+
+def create_interaction_features(df):
+    """
+    Create advanced interaction features for enhanced model performance
+    Focus on interpretable, business-meaningful features
+    ENHANCED VERSION: Includes new loan features (monto_prestamo, tasa_prestamo)
+    DTYPE FIXED: All features are ML-compatible (int32/float32)
+    """
+    df_enhanced = df.copy()
+
+    print(f"   🔧 Creating interaction features for dataset: {df.shape}")
+
+    # Get age group columns
+    age_columns = [col for col in df.columns if col.startswith('age_group_')]
+    
+    # =============================================================================
+    # NEW SECTION: LOAN-SPECIFIC FEATURE ENGINEERING
+    # =============================================================================
+    print("   💳 Creating loan-specific features...")
+    
+    # 1. LOAN AMOUNT FEATURES
+    if 'monto_prestamo' in df.columns:
+        # Loan amount categories
+        loan_25th = df_enhanced['monto_prestamo'].quantile(0.25)
+        loan_50th = df_enhanced['monto_prestamo'].quantile(0.50)
+        loan_75th = df_enhanced['monto_prestamo'].quantile(0.75)
+        loan_90th = df_enhanced['monto_prestamo'].quantile(0.90)
+
+        df_enhanced['small_loan'] = ((df_enhanced['monto_prestamo'] > 0) &
+                                   (df_enhanced['monto_prestamo'] <= loan_25th)).astype('int32')
+        df_enhanced['medium_loan'] = ((df_enhanced['monto_prestamo'] > loan_25th) &
+                                    (df_enhanced['monto_prestamo'] <= loan_75th)).astype('int32')
+        df_enhanced['large_loan'] = ((df_enhanced['monto_prestamo'] > loan_75th) &
+                                   (df_enhanced['monto_prestamo'] <= loan_90th)).astype('int32')
+        df_enhanced['jumbo_loan'] = (df_enhanced['monto_prestamo'] > loan_90th).astype('int32')
+
+        # Loan amount per age (loan capacity indicator)
+        if 'edad' in df.columns:
+            df_enhanced['loan_per_age'] = (df_enhanced['monto_prestamo'] / (df_enhanced['edad'] + 1)).astype('float32')
+            df_enhanced['high_loan_capacity'] = (df_enhanced['loan_per_age'] >=
+                                               df_enhanced['loan_per_age'].quantile(0.8)).astype('int32')
+
+        print(f"      ✅ Created loan amount category and capacity features")
+    
+    # 2. INTEREST RATE FEATURES
+    if 'tasa_prestamo' in df.columns:
+        # Interest rate categories
+        rate_25th = df_enhanced['tasa_prestamo'].quantile(0.25)
+        rate_75th = df_enhanced['tasa_prestamo'].quantile(0.75)
+
+        df_enhanced['low_interest_rate'] = (df_enhanced['tasa_prestamo'] <= rate_25th).astype('int32')
+        df_enhanced['high_interest_rate'] = (df_enhanced['tasa_prestamo'] >= rate_75th).astype('int32')
+        df_enhanced['medium_interest_rate'] = ((df_enhanced['tasa_prestamo'] > rate_25th) &
+                                             (df_enhanced['tasa_prestamo'] < rate_75th)).astype('int32')
+
+        # Interest rate risk categories
+        df_enhanced['premium_rate'] = (df_enhanced['tasa_prestamo'] <= 2.0).astype('int32')  # Very low rate
+        df_enhanced['standard_rate'] = ((df_enhanced['tasa_prestamo'] > 2.0) &
+                                      (df_enhanced['tasa_prestamo'] <= 5.0)).astype('int32')
+        df_enhanced['high_risk_rate'] = (df_enhanced['tasa_prestamo'] > 5.0).astype('int32')
+
+        print(f"      ✅ Created interest rate category and risk features")
+    
+    # 3. LOAN-TO-PAYMENT RELATIONSHIPS
+    if 'monto_prestamo' in df.columns and 'monto_letra' in df.columns:
+        # Loan to monthly payment ratio (loan term indicator)
+        df_enhanced['loan_to_payment_ratio'] = (df_enhanced['monto_prestamo'] / (df_enhanced['monto_letra'] + 1)).astype('float32')
+
+        # Loan term categories (based on ratio)
+        term_33rd = df_enhanced['loan_to_payment_ratio'].quantile(0.33)
+        term_66th = df_enhanced['loan_to_payment_ratio'].quantile(0.66)
+
+        df_enhanced['short_term_loan'] = (df_enhanced['loan_to_payment_ratio'] <= term_33rd).astype('int32')
+        df_enhanced['medium_term_loan'] = ((df_enhanced['loan_to_payment_ratio'] > term_33rd) &
+                                         (df_enhanced['loan_to_payment_ratio'] <= term_66th)).astype('int32')
+        df_enhanced['long_term_loan'] = (df_enhanced['loan_to_payment_ratio'] > term_66th).astype('int32')
+
+        # Payment burden from loan
+        df_enhanced['loan_payment_burden'] = (df_enhanced['monto_letra'] / (df_enhanced['monto_prestamo'] + 1)).astype('float32')
+        df_enhanced['high_loan_burden'] = (df_enhanced['loan_payment_burden'] >=
+                                         df_enhanced['loan_payment_burden'].quantile(0.8)).astype('int32')
+
+        print(f"      ✅ Created loan-payment relationship features")
+    
+    # 4. LOAN-BALANCE INTERACTIONS
+    if 'monto_prestamo' in df.columns and 'saldo' in df.columns:
+        # Loan to balance ratio (leverage indicator)
+        df_enhanced['loan_to_balance_ratio'] = df_enhanced['monto_prestamo'] / (df_enhanced['saldo'] + 1)
+        
+        # Financial leverage categories
+        leverage_50th = df_enhanced['loan_to_balance_ratio'].quantile(0.50)
+        leverage_80th = df_enhanced['loan_to_balance_ratio'].quantile(0.80)
+        
+        df_enhanced['conservative_leverage'] = (df_enhanced['loan_to_balance_ratio'] <= leverage_50th).astype(int)
+        df_enhanced['moderate_leverage'] = ((df_enhanced['loan_to_balance_ratio'] > leverage_50th) & 
+                                          (df_enhanced['loan_to_balance_ratio'] <= leverage_80th)).astype(int)
+        df_enhanced['high_leverage'] = (df_enhanced['loan_to_balance_ratio'] > leverage_80th).astype(int)
+        
+        # Balance coverage (can balance cover loan?)
+        df_enhanced['balance_covers_loan'] = (df_enhanced['saldo'] >= df_enhanced['monto_prestamo']).astype(int)
+        df_enhanced['balance_coverage_ratio'] = df_enhanced['saldo'] / (df_enhanced['monto_prestamo'] + 1)
+        
+        print(f"      ✅ Created loan-balance interaction features")
+    
+    # 5. LOAN MISSING VALUE PATTERNS
+    if 'monto_prestamo_missing' in df.columns and 'tasa_prestamo_missing' in df.columns:
+        # Loan data completeness patterns
+        df_enhanced['complete_loan_data'] = ((df_enhanced['monto_prestamo_missing'] == 0) &
+                                           (df_enhanced['tasa_prestamo_missing'] == 0)).astype('int32')
+        df_enhanced['partial_loan_data'] = ((df_enhanced['monto_prestamo_missing'] == 0) |
+                                          (df_enhanced['tasa_prestamo_missing'] == 0)).astype('int32')
+        df_enhanced['no_loan_data'] = ((df_enhanced['monto_prestamo_missing'] == 1) &
+                                     (df_enhanced['tasa_prestamo_missing'] == 1)).astype('int32')
+
+        # Loan data quality score
+        df_enhanced['loan_data_quality'] = (2 - df_enhanced['monto_prestamo_missing'] -
+                                          df_enhanced['tasa_prestamo_missing']).astype('int32')
+
+        print(f"      ✅ Created loan data completeness features")
+    
+    # 6. LOAN-DEMOGRAPHIC INTERACTIONS
+    if 'monto_prestamo' in df.columns and 'edad' in df.columns:
+        # Age-based loan patterns
+        df_enhanced['young_borrower'] = ((df_enhanced['edad'] <= 35) & 
+                                       (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        df_enhanced['mature_borrower'] = ((df_enhanced['edad'] > 35) & (df_enhanced['edad'] <= 55) & 
+                                        (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        df_enhanced['senior_borrower'] = ((df_enhanced['edad'] > 55) & 
+                                        (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        
+        # Loan size relative to age
+        if 'large_loan' in df_enhanced.columns:
+            df_enhanced['young_large_borrower'] = (df_enhanced['young_borrower'] & 
+                                                 df_enhanced['large_loan']).astype(int)
+            df_enhanced['senior_large_borrower'] = (df_enhanced['senior_borrower'] & 
+                                                  df_enhanced['large_loan']).astype(int)
+        
+        print(f"      ✅ Created loan-demographic interaction features")
+    
+    # 7. LOAN-OCCUPATION INTERACTIONS
+    if 'monto_prestamo' in df.columns and 'ocupacion_consolidated_freq' in df.columns:
+        # Professional borrowing patterns
+        occ_75th = df_enhanced['ocupacion_consolidated_freq'].quantile(0.75)
+        
+        df_enhanced['professional_borrower'] = ((df_enhanced['ocupacion_consolidated_freq'] >= occ_75th) & 
+                                              (df_enhanced['monto_prestamo'] > 0)).astype(int)
+        
+        # Loan amount relative to occupation frequency
+        df_enhanced['loan_per_occupation_freq'] = (df_enhanced['monto_prestamo'] / 
+                                                 (df_enhanced['ocupacion_consolidated_freq'] + 1))
+        
+        if 'large_loan' in df_enhanced.columns:
+            df_enhanced['professional_large_loan'] = (df_enhanced['professional_borrower'] & 
+                                                    df_enhanced['large_loan']).astype(int)
+        
+        print(f"      ✅ Created loan-occupation interaction features")
+    
+    # 8. CREDIT RISK INDICATORS (LOAN-BASED)
+    if ('monto_prestamo' in df.columns and 'tasa_prestamo' in df.columns and 
+        'monto_letra' in df.columns):
+        
+        # High-risk loan profile
+        df_enhanced['high_risk_loan_profile'] = (
+            (df_enhanced['high_interest_rate'] == 1) & 
+            (df_enhanced['high_loan_burden'] == 1)
+        ).astype(int)
+        
+        # Low-risk loan profile
+        df_enhanced['low_risk_loan_profile'] = (
+            (df_enhanced['low_interest_rate'] == 1) & 
+            (df_enhanced['conservative_leverage'] == 1)
+        ).astype(int)
+        
+        # Premium borrower (low rate + large loan)
+        if 'large_loan' in df_enhanced.columns:
+            df_enhanced['premium_borrower'] = (
+                (df_enhanced['premium_rate'] == 1) & 
+                (df_enhanced['large_loan'] == 1)
+            ).astype(int)
+        
+        print(f"      ✅ Created credit risk indicator features")
+    
+    # 9. LOAN SOPHISTICATION SCORE
+    if ('monto_prestamo' in df.columns and 'tasa_prestamo' in df.columns and 
+        'saldo' in df.columns):
+        
+        # Financial sophistication based on loan management
+        sophistication_components = []
+        
+        if 'balance_covers_loan' in df_enhanced.columns:
+            sophistication_components.append('balance_covers_loan')
+        if 'low_interest_rate' in df_enhanced.columns:
+            sophistication_components.append('low_interest_rate')
+        if 'conservative_leverage' in df_enhanced.columns:
+            sophistication_components.append('conservative_leverage')
+        
+        if len(sophistication_components) >= 2:
+            df_enhanced['loan_sophistication_score'] = df_enhanced[sophistication_components].sum(axis=1)
+            df_enhanced['sophisticated_borrower'] = (
+                df_enhanced['loan_sophistication_score'] >= len(sophistication_components) * 0.67
+            ).astype(int)
+            
+            print(f"      ✅ Created loan sophistication features")
+    
+    # =============================================================================
+    # EXISTING FEATURE ENGINEERING (ENHANCED WITH LOAN INTERACTIONS)
+    # =============================================================================
+    
+    # 1. AGE-OCCUPATION INTERACTIONS (Enhanced with loan data)
+    if 'ocupacion_consolidated_freq' in df.columns and age_columns:
+        for age_col in age_columns:
+            interaction_name = f"{age_col}_x_occupation"
+            df_enhanced[interaction_name] = (df_enhanced[age_col] * df_enhanced['ocupacion_consolidated_freq'])
+            
+            # Add loan interaction if available
+            if 'monto_prestamo' in df.columns:
+                loan_interaction_name = f"{age_col}_x_occupation_x_loan"
+                df_enhanced[loan_interaction_name] = (df_enhanced[interaction_name] * 
+                                                    (df_enhanced['monto_prestamo'] > 0).astype(int))
+        
+        print(f"      ✅ Created {len(age_columns)} age-occupation interactions (with loan variants)")
+    
+    # 2. LOCATION-OCCUPATION INTERACTION (Enhanced)
+    if ('ciudad_consolidated_freq' in df.columns and 'ocupacion_consolidated_freq' in df.columns):
+        df_enhanced['location_x_occupation'] = (df_enhanced['ciudad_consolidated_freq'] * 
+                                              df_enhanced['ocupacion_consolidated_freq'])
+        
+        # Add loan interaction
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['location_x_occupation_x_loan'] = (df_enhanced['location_x_occupation'] * 
+                                                         (df_enhanced['monto_prestamo'] > 0).astype(int))
+        
+        print(f"      ✅ Created location-occupation interaction (with loan variant)")
+    
+    # 3. FINANCIAL BEHAVIOR FEATURES (Enhanced with loan data)
+    print("   💰 Creating enhanced financial behavior features...")
+    
+    # Payment burden relative to age (enhanced with loan data)
+    if 'monto_letra' in df.columns and 'edad' in df.columns:
+        df_enhanced['payment_per_age'] = df_enhanced['monto_letra'] / (df_enhanced['edad'] + 1)
+        
+        # Enhanced with loan information
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['total_debt_per_age'] = (df_enhanced['monto_letra'] + 
+                                               df_enhanced['monto_prestamo'] * 0.1) / (df_enhanced['edad'] + 1)
+        
+        # High payment burden indicator
+        payment_75th = df_enhanced['monto_letra'].quantile(0.75)
+        df_enhanced['high_payment_burden'] = (df_enhanced['monto_letra'] >= payment_75th).astype(int)
+        print(f"      ✅ Created enhanced payment burden features")
+    
+    # 4. ACCOUNT BALANCE FEATURES (Enhanced with loan data)
+    if 'saldo' in df.columns:
+        # Balance categories
+        saldo_25th = df_enhanced['saldo'].quantile(0.25)
+        saldo_75th = df_enhanced['saldo'].quantile(0.75)
+
+        df_enhanced['low_balance'] = (df_enhanced['saldo'] <= saldo_25th).astype(int)
+        df_enhanced['high_balance'] = (df_enhanced['saldo'] >= saldo_75th).astype(int)
+        df_enhanced['medium_balance'] = ((df_enhanced['saldo'] > saldo_25th) &
+                                       (df_enhanced['saldo'] < saldo_75th)).astype(int)
+
+        # Balance-to-payment ratio
+        if 'monto_letra' in df.columns:
+            df_enhanced['balance_to_payment_ratio'] = df_enhanced['saldo'] / (df_enhanced['monto_letra'] + 1)
+            df_enhanced['high_liquidity'] = (df_enhanced['balance_to_payment_ratio'] >= 100).astype(int)
+
+        print(f"      ✅ Created enhanced balance and liquidity features")
+
+    # 5. EMPLOYMENT STABILITY FEATURES (Enhanced with loan interactions)
+    print("   🏢 Creating enhanced employment stability features...")
+
+    if 'fechaingresoempleo_days' in df.columns:
+        # Employment tenure categories
+        tenure_25th = df_enhanced['fechaingresoempleo_days'].quantile(0.25)
+        tenure_75th = df_enhanced['fechaingresoempleo_days'].quantile(0.75)
+
+        df_enhanced['short_tenure'] = (df_enhanced['fechaingresoempleo_days'] >= tenure_75th).astype(int)
+        df_enhanced['long_tenure'] = (df_enhanced['fechaingresoempleo_days'] <= tenure_25th).astype(int)
+        df_enhanced['medium_tenure'] = ((df_enhanced['fechaingresoempleo_days'] > tenure_25th) &
+                                      (df_enhanced['fechaingresoempleo_days'] < tenure_75th)).astype(int)
+
+        # Years of employment
+        df_enhanced['employment_years'] = abs(df_enhanced['fechaingresoempleo_days']) / 365.25
+        df_enhanced['veteran_employee'] = (df_enhanced['employment_years'] >= 10).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['stable_borrower'] = ((df_enhanced['long_tenure'] == 1) &
+                                            (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+        print(f"      ✅ Created enhanced employment stability features")
+
+    # 6. PROFESSIONAL STABILITY SCORE (Enhanced)
+    if ('ocupacion_consolidated_freq' in df.columns and
+        'nombreempleadorcliente_consolidated_freq' in df.columns and
+        'cargoempleocliente_consolidated_freq' in df.columns):
+
+        # Professional stability score
+        occ_norm = df_enhanced['ocupacion_consolidated_freq'] / df_enhanced['ocupacion_consolidated_freq'].max()
+        emp_norm = df_enhanced['nombreempleadorcliente_consolidated_freq'] / df_enhanced['nombreempleadorcliente_consolidated_freq'].max()
+        pos_norm = df_enhanced['cargoempleocliente_consolidated_freq'] / df_enhanced['cargoempleocliente_consolidated_freq'].max()
+
+        df_enhanced['professional_stability_score'] = (occ_norm + emp_norm + pos_norm) / 3
+        df_enhanced['high_professional_stability'] = (df_enhanced['professional_stability_score'] >= 0.7).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['stable_professional_borrower'] = ((df_enhanced['high_professional_stability'] == 1) &
+                                                         (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+        print(f"      ✅ Created enhanced professional stability features")
+
+    # 7. RISK PROFILE FEATURES (Enhanced with loan risk)
+    print("   ⚠️ Creating enhanced risk profile features...")
+
+    # Age-based risk categories
+    if 'edad' in df.columns:
+        df_enhanced['young_adult'] = ((df_enhanced['edad'] >= 18) & (df_enhanced['edad'] <= 30)).astype(int)
+        df_enhanced['prime_age'] = ((df_enhanced['edad'] > 30) & (df_enhanced['edad'] <= 50)).astype(int)
+        df_enhanced['senior'] = (df_enhanced['edad'] > 50).astype(int)
+
+    # Combined risk indicators (enhanced with loan risk)
+    risk_features = []
+    if 'is_retired' in df.columns:
+        risk_features.append('is_retired')
+    if 'high_payment_burden' in df_enhanced.columns:
+        risk_features.append('high_payment_burden')
+    if 'low_balance' in df_enhanced.columns:
+        risk_features.append('low_balance')
+    if 'short_tenure' in df_enhanced.columns:
+        risk_features.append('short_tenure')
+    if 'high_risk_loan_profile' in df_enhanced.columns:
+        risk_features.append('high_risk_loan_profile')
+
+    if len(risk_features) >= 2:
+        df_enhanced['risk_score'] = df_enhanced[risk_features].sum(axis=1)
+        df_enhanced['high_risk_profile'] = (df_enhanced['risk_score'] >= 2).astype(int)
+        df_enhanced['low_risk_profile'] = (df_enhanced['risk_score'] == 0).astype(int)
+        print(f"      ✅ Created enhanced risk profile features")
+
+    # 8. TEMPORAL FEATURES (Enhanced)
+    print("   📅 Creating enhanced temporal features...")
+
+    if 'fecha_inicio_days' in df.columns and 'fecha_vencimiento_days' in df.columns:
+        df_enhanced['contract_duration'] = df_enhanced['fecha_vencimiento_days'] - df_enhanced['fecha_inicio_days']
+        df_enhanced['contract_maturity_years'] = df_enhanced['contract_duration'] / 365.25
+        df_enhanced['long_term_contract'] = (df_enhanced['contract_maturity_years'] >= 10).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['long_term_borrower'] = ((df_enhanced['long_term_contract'] == 1) &
+                                               (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+        print(f"      ✅ Created enhanced temporal features")
+
+    # 9. HIGH EARNER POTENTIAL INDICATORS (Enhanced with loan data)
+    print("   💰 Creating enhanced high earner potential indicators...")
+
+    if ('edad' in df_enhanced.columns and
+        'ocupacion_consolidated_freq' in df_enhanced.columns and
+        'ciudad_consolidated_freq' in df_enhanced.columns):
+
+        # Define thresholds
+        occupation_80th = df_enhanced['ocupacion_consolidated_freq'].quantile(0.8)
+        city_70th = df_enhanced['ciudad_consolidated_freq'].quantile(0.7)
+
+        # High earner potential indicators
+        df_enhanced['high_earner_potential'] = (
+            (df_enhanced['edad'] >= 35) &
+            (df_enhanced['ocupacion_consolidated_freq'] >= occupation_80th) &
+            (df_enhanced['ciudad_consolidated_freq'] >= city_70th)
+        ).astype(int)
+
+        # Enhanced with loan data
+        if 'monto_prestamo' in df.columns:
+            df_enhanced['high_earner_borrower'] = ((df_enhanced['high_earner_potential'] == 1) &
+                                                 (df_enhanced['monto_prestamo'] > 0)).astype(int)
+
+            if 'premium_borrower' in df_enhanced.columns:
+                df_enhanced['elite_borrower'] = ((df_enhanced['high_earner_potential'] == 1) &
+                                               (df_enhanced['premium_borrower'] == 1)).astype(int)
+
+        print(f"      ✅ Created enhanced high earner potential indicators")
+
+    # =============================================================================
+    # FINAL DTYPE CLEANUP FOR ML COMPATIBILITY
+    # =============================================================================
+    print("   🔧 Final dtype cleanup for ML compatibility...")
+
+    # Define columns to exclude from dtype conversion
+    exclude_cols = ['cliente', 'identificador_unico', 'data_source', 'processing_timestamp']
+    feature_cols = [col for col in df_enhanced.columns if col not in exclude_cols]
+
+    # Convert boolean columns to int32
+    bool_cols = df_enhanced.select_dtypes(include=['bool']).columns
+    bool_feature_cols = [col for col in bool_cols if col in feature_cols]
+    for col in bool_feature_cols:
+        df_enhanced[col] = df_enhanced[col].astype('int32')
+        print(f"      ✅ Converted {col}: bool → int32")
+
+    # Convert object columns to numeric (for dummy variables that might be object)
+    object_cols = df_enhanced.select_dtypes(include=['object']).columns
+    object_feature_cols = [col for col in object_cols if col in feature_cols]
+    for col in object_feature_cols:
+        try:
+            # Check if it's a dummy variable (contains only 0, 1, or NaN)
+            unique_vals = df_enhanced[col].dropna().unique()
+            if len(unique_vals) <= 2 and all(str(val).strip() in ['0', '1', '0.0', '1.0', 'True', 'False'] for val in unique_vals):
+                df_enhanced[col] = pd.to_numeric(df_enhanced[col], errors='coerce').fillna(0).astype('int32')
+                print(f"      ✅ Converted {col}: object → int32 (dummy variable)")
+            else:
+                # Try general numeric conversion
+                df_enhanced[col] = pd.to_numeric(df_enhanced[col], errors='coerce').fillna(0).astype('float32')
+                print(f"      ✅ Converted {col}: object → float32")
+        except Exception as e:
+            print(f"      ⚠️  Could not convert {col}: {e}")
+
+    # Optimize numeric dtypes
+    int_cols = df_enhanced.select_dtypes(include=['int64']).columns
+    int_feature_cols = [col for col in int_cols if col in feature_cols]
+    for col in int_feature_cols:
+        df_enhanced[col] = df_enhanced[col].astype('int32')
+
+    float_cols = df_enhanced.select_dtypes(include=['float64']).columns
+    float_feature_cols = [col for col in float_cols if col in feature_cols]
+    for col in float_feature_cols:
+        df_enhanced[col] = df_enhanced[col].astype('float32')
+
+    # Final validation
+    remaining_objects = df_enhanced.select_dtypes(include=['object']).columns
+    remaining_feature_objects = [col for col in remaining_objects if col in feature_cols]
+
+    if remaining_feature_objects:
+        print(f"      ⚠️  Warning: {len(remaining_feature_objects)} feature columns still object dtype:")
+        for col in remaining_feature_objects[:5]:  # Show first 5
+            print(f"         - {col}: {df_enhanced[col].unique()[:3]}")
+    else:
+        print(f"      ✅ All feature columns are now ML-compatible!")
+
+    # Show final dtype summary
+    dtype_summary = df_enhanced[feature_cols].dtypes.value_counts()
+    print(f"      📊 Final feature dtypes: {dict(dtype_summary)}")
+
+    new_features = [col for col in df_enhanced.columns if col not in df.columns]
+    print(f"   ✨ Enhanced feature engineering complete: +{len(new_features)} new features")
+    print(f"   📊 Final dataset shape: {df_enhanced.shape}")
+
+    return df_enhanced
+
+print("✅ Enhanced feature engineering function ready (with comprehensive loan features + dtype fixes)")
+
+
+# %%
+# SECTION 6: TRAIN/VALIDATION/TEST SPLIT (NO ID OVERLAP)
+# =============================================================================
+print("\n📊 CREATING TRAIN/VALIDATION/TEST SPLITS")
+print("-" * 50)
+
+from sklearn.model_selection import train_test_split
+
+# Define split ratios
+TRAIN_RATIO, VALID_RATIO, TEST_RATIO = 0.85, 0.1, 0.05
+
+# Split by customer IDs to prevent data leakage
+unique_customers = df_processed['identificador_unico'].unique()
+print(f"   Total customers: {len(unique_customers):,}")
+
+# First split: separate test customers
+train_valid_customers, test_customers = train_test_split(
+    unique_customers, test_size=TEST_RATIO, random_state=42, shuffle=True)
+
+# Second split: separate train and validation customers
+train_customers, valid_customers = train_test_split(
+    train_valid_customers, test_size=VALID_RATIO/(TRAIN_RATIO + VALID_RATIO),
+    random_state=42, shuffle=True)
+
+# Create datasets based on customer splits
+train_df = df_processed[df_processed['identificador_unico'].isin(train_customers)].copy()
+valid_df = df_processed[df_processed['identificador_unico'].isin(valid_customers)].copy()
+test_df = df_processed[df_processed['identificador_unico'].isin(test_customers)].copy()
+
+print(f"   ✅ Train: {len(train_df):,} records ({len(train_df)/len(df_processed):.1%})")
+print(f"   ✅ Valid: {len(valid_df):,} records ({len(valid_df)/len(df_processed):.1%})")
+print(f"   ✅ Test: {len(test_df):,} records ({len(test_df)/len(df_processed):.1%})")
+
+# Verify no customer overlap
+train_ids = set(train_df['identificador_unico'].unique())
+valid_ids = set(valid_df['identificador_unico'].unique())
+test_ids = set(test_df['identificador_unico'].unique())
+
+overlaps = [
+    len(train_ids.intersection(valid_ids)),
+    len(train_ids.intersection(test_ids)),
+    len(valid_ids.intersection(test_ids))
+]
+
+if sum(overlaps) == 0:
+    print("   ✅ No customer ID overlap - data leakage prevented")
+else:
+    print("   ❌ Customer overlap detected!")
+
+# %%
+# =============================================================================
+# LESS AGGRESSIVE WINSORIZATION - PRESERVE HIGH-INCOME EXAMPLES
+# =============================================================================
+print("\n🔧 IMPLEMENTING LESS AGGRESSIVE WINSORIZATION")
+print("-" * 60)
+
+def clean_target_outliers_conservative(df_list, target_col='ingresos_reportados'):
+    """
+    Conservative outlier cleaning that preserves high-income examples
+    """
+    # Get outlier parameters from training set only
+    train_target = df_list[0][target_col]
+    
+    print(f"📊 Original target distribution:")
+    print(f"   Mean: ${train_target.mean():,.2f}")
+    print(f"   Median: ${train_target.median():,.2f}")
+    print(f"   95th percentile: ${train_target.quantile(0.95):,.2f}")
+    print(f"   99th percentile: ${train_target.quantile(0.99):,.2f}")
+    print(f"   99.5th percentile: ${train_target.quantile(0.995):,.2f}")
+    print(f"   99.9th percentile: ${train_target.quantile(0.999):,.2f}")
+    print(f"   Max: ${train_target.max():,.2f}")
+    
+    # OPTION 1: VERY CONSERVATIVE (Recommended)
+    # Only remove extreme outliers that are likely data errors
+    lower_cap = train_target.quantile(0.001)  # 0.1st percentile (was 0.5th)
+    upper_cap = train_target.quantile(0.995)  # 99.5th percentile (was 99.9th)
+    
+    # OPTION 2: MODERATE CONSERVATIVE (Alternative)
+    # Uncomment these lines if Option 1 still has issues
+    # lower_cap = train_target.quantile(0.002)  # 0.2nd percentile
+    # upper_cap = train_target.quantile(0.99)   # 99th percentile
+    
+    # OPTION 3: MINIMAL WINSORIZATION (Last resort)
+    # Uncomment these lines if you want to preserve even more high earners
+    # lower_cap = 0  # Don't cap lower values at all
+    # upper_cap = train_target.quantile(0.998)  # 99.8th percentile
+    
+    print(f"\n🎯 Conservative winsorization bounds:")
+    print(f"   Lower cap: ${lower_cap:,.2f}")
+    print(f"   Upper cap: ${upper_cap:,.2f}")
+    print(f"   Preserving top {(1-0.995)*100:.1f}% of high earners (vs {(1-0.999)*100:.1f}% before)")
+
+    cleaned_dfs = []
+    set_names = ['Training', 'Validation', 'Test']
+
+    for i, (df, set_name) in enumerate(zip(df_list, set_names)):
+        df_clean = df.copy()
+        original_target = df_clean[target_col].copy()
+
+        # Apply conservative winsorization
+        df_clean[target_col] = original_target.clip(lower=lower_cap, upper=upper_cap)
+
+        # Count changes
+        n_capped = (original_target != df_clean[target_col]).sum()
+        n_upper_capped = (original_target > upper_cap).sum()
+        n_lower_capped = (original_target < lower_cap).sum()
+        
+        print(f"\n   ✅ {set_name} set:")
+        print(f"      Total capped: {n_capped:,} ({n_capped/len(df)*100:.1f}%)")
+        print(f"      Upper capped: {n_upper_capped:,} ({n_upper_capped/len(df)*100:.1f}%)")
+        print(f"      Lower capped: {n_lower_capped:,} ({n_lower_capped/len(df)*100:.1f}%)")
+
+        # Add outlier flags
+        df_clean['was_winsorized'] = (original_target != df_clean[target_col]).astype(int)
+        df_clean['was_upper_capped'] = (original_target > upper_cap).astype(int)
+        df_clean['was_lower_capped'] = (original_target < lower_cap).astype(int)
+
+        cleaned_dfs.append(df_clean)
+
+    return cleaned_dfs
+
+# =============================================================================
+# ALTERNATIVE: SMART WINSORIZATION BASED ON DATA ANALYSIS
+# =============================================================================
+print(f"\n🧠 ALTERNATIVE: Smart Winsorization")
+print("-" * 40)
+
+def smart_winsorization(df_list, target_col='ingresos_reportados'):
+    """
+    Smart winsorization that analyzes the data to find natural breakpoints
+    """
+    train_target = df_list[0][target_col]
+    
+    # Analyze the distribution
+    q95 = train_target.quantile(0.95)
+    q99 = train_target.quantile(0.99)
+    q999 = train_target.quantile(0.999)
+    max_val = train_target.max()
+    
+    print(f"📈 Distribution analysis:")
+    print(f"   95th percentile: ${q95:,.2f}")
+    print(f"   99th percentile: ${q99:,.2f}")
+    print(f"   99.9th percentile: ${q999:,.2f}")
+    print(f"   Maximum: ${max_val:,.2f}")
+    
+    # Smart upper cap logic
+    if max_val > q999 * 3:  # If max is 3x the 99.9th percentile
+        upper_cap = q999  # Cap at 99.9th percentile
+        print(f"   🎯 Using 99.9th percentile cap (extreme outliers detected)")
+    elif max_val > q99 * 2:  # If max is 2x the 99th percentile
+        upper_cap = train_target.quantile(0.995)  # Cap at 99.5th percentile
+        print(f"   🎯 Using 99.5th percentile cap (moderate outliers detected)")
+    else:
+        upper_cap = train_target.quantile(0.99)  # Cap at 99th percentile
+        print(f"   🎯 Using 99th percentile cap (normal distribution)")
+    
+    # Conservative lower cap
+    lower_cap = train_target.quantile(0.001)
+    
+    print(f"\n🎯 Smart winsorization bounds:")
+    print(f"   Lower cap: ${lower_cap:,.2f}")
+    print(f"   Upper cap: ${upper_cap:,.2f}")
+    
+    # Apply the same logic as conservative winsorization
+    cleaned_dfs = []
+    set_names = ['Training', 'Validation', 'Test']
+
+    for i, (df, set_name) in enumerate(zip(df_list, set_names)):
+        df_clean = df.copy()
+        original_target = df_clean[target_col].copy()
+        df_clean[target_col] = original_target.clip(lower=lower_cap, upper=upper_cap)
+        
+        n_capped = (original_target != df_clean[target_col]).sum()
+        print(f"   ✅ {set_name}: {n_capped:,} values capped ({n_capped/len(df)*100:.1f}%)")
+        
+        df_clean['was_winsorized'] = (original_target != df_clean[target_col]).astype(int)
+        cleaned_dfs.append(df_clean)
+
+    return cleaned_dfs
+
+## Apply outlier cleaning
+train_df_clean, valid_df_clean, test_df_clean = smart_winsorization([train_df, valid_df, test_df])
+print("✅ Outlier cleaning complete - consistent across all sets")
+
+# %%
+# SECTION 8: FEATURE ENGINEERING APPLICATION
+# =============================================================================
+print("\n⚙️ APPLYING FEATURE ENGINEERING")
+print("-" * 50)
+
+# Apply feature engineering to all datasets
+train_df_enhanced_0 = create_interaction_features(train_df_clean)
+valid_df_enhanced = create_interaction_features(valid_df_clean)
+test_df_enhanced = create_interaction_features(test_df_clean)
+
+print(f"\n🎯 ENHANCED DATASET SHAPES:")
+print(f"   Training: {train_df_enhanced_0.shape}")
+print(f"   Validation: {valid_df_enhanced.shape}")
+print(f"   Test: {test_df_enhanced.shape}")
+
+# %%
+# =============================================================================
+# DEMOGRAPHIC REPRESENTATION ANALYSIS
+# =============================================================================
+print("👥 DEMOGRAPHIC REPRESENTATION ANALYSIS")
+print("=" * 60)
+
+def analyze_demographic_representation(df, min_representation_pct=2.0):
+    """
+    Analyze demographic features to identify underrepresented groups
+    """
+    
+    print(f"📊 Dataset size: {len(df):,} records")
+    print(f"⚠️  Flagging groups with < {min_representation_pct}% representation")
+    print("-" * 60)
+    
+    # =============================================================================
+    # 1. AGE ANALYSIS
+    # =============================================================================
+    print("\n🎂 AGE ANALYSIS:")
+    print("-" * 30)
+    
+    # Basic age stats
+    if 'edad' in df.columns:
+        age_stats = {
+            'Mean': df['edad'].mean(),
+            'Median': df['edad'].median(),
+            'Min': df['edad'].min(),
+            'Max': df['edad'].max(),
+            'Missing': df['edad'].isnull().sum()
+        }
+        
+        print("   Basic Age Statistics:")
+        for key, value in age_stats.items():
+            if key == 'Missing':
+                print(f"      {key}: {value:,} ({value/len(df)*100:.1f}%)")
+            else:
+                print(f"      {key}: {value:.1f}")
+    
+    # Age groups analysis
+    age_group_cols = [col for col in df.columns if col.startswith('age_group_')]
+    if age_group_cols:
+        print(f"\n   Age Group Distribution:")
+        
+        underrepresented_age = []
+        for col in age_group_cols:
+            count = df[col].sum()
+            percentage = (count / len(df)) * 100
+            status = "⚠️ " if percentage < min_representation_pct else "✅"
+            print(f"      {status} {col.replace('age_group_', '')}: {count:,} ({percentage:.1f}%)")
+            
+            if percentage < min_representation_pct:
+                underrepresented_age.append(col.replace('age_group_', ''))
+        
+        if underrepresented_age:
+            print(f"   🚨 Underrepresented age groups: {underrepresented_age}")
+        else:
+            print(f"   ✅ All age groups well represented")
+    
+    # =============================================================================
+    # 2. GENDER ANALYSIS
+    # =============================================================================
+    print(f"\n👫 GENDER ANALYSIS:")
+    print("-" * 30)
+    
+    gender_cols = [col for col in df.columns if col.startswith('sexo_consolidated_')]
+    if gender_cols:
+        print("   Gender Distribution:")
+        
+        # Calculate female representation (assuming binary)
+        if 'sexo_consolidated_Masculino' in df.columns:
+            male_count = df['sexo_consolidated_Masculino'].sum()
+            female_count = len(df) - male_count
+            
+            male_pct = (male_count / len(df)) * 100
+            female_pct = (female_count / len(df)) * 100
+            
+            male_status = "⚠️ " if male_pct < min_representation_pct else "✅"
+            female_status = "⚠️ " if female_pct < min_representation_pct else "✅"
+            
+            print(f"      {male_status} Male: {male_count:,} ({male_pct:.1f}%)")
+            print(f"      {female_status} Female: {female_count:,} ({female_pct:.1f}%)")
+            
+            # Gender balance check
+            gender_ratio = min(male_pct, female_pct) / max(male_pct, female_pct)
+            if gender_ratio < 0.3:  # Less than 30% representation
+                print(f"   🚨 Gender imbalance detected (ratio: {gender_ratio:.2f})")
+            else:
+                print(f"   ✅ Gender distribution balanced (ratio: {gender_ratio:.2f})")
+    
+    # =============================================================================
+    # 3. MARITAL STATUS ANALYSIS
+    # =============================================================================
+    print(f"\n💍 MARITAL STATUS ANALYSIS:")
+    print("-" * 30)
+    
+    marital_cols = [col for col in df.columns if col.startswith('estado_civil_consolidated_')]
+    if marital_cols:
+        print("   Marital Status Distribution:")
+        
+        underrepresented_marital = []
+        for col in marital_cols:
+            count = df[col].sum()
+            percentage = (count / len(df)) * 100
+            status = "⚠️ " if percentage < min_representation_pct else "✅"
+            category = col.replace('estado_civil_consolidated_', '')
+            print(f"      {status} {category}: {count:,} ({percentage:.1f}%)")
+            
+            if percentage < min_representation_pct:
+                underrepresented_marital.append(category)
+        
+        # Calculate "Married" (not in the dummy variables)
+        total_other_marital = sum(df[col].sum() for col in marital_cols)
+        married_count = len(df) - total_other_marital
+        married_pct = (married_count / len(df)) * 100
+        married_status = "⚠️ " if married_pct < min_representation_pct else "✅"
+        print(f"      {married_status} Married (baseline): {married_count:,} ({married_pct:.1f}%)")
+        
+        if underrepresented_marital:
+            print(f"   🚨 Underrepresented marital status: {underrepresented_marital}")
+        else:
+            print(f"   ✅ All marital statuses well represented")
+    
+    # =============================================================================
+    # 4. COUNTRY ANALYSIS
+    # =============================================================================
+    print(f"\n🌍 COUNTRY ANALYSIS:")
+    print("-" * 30)
+    
+    country_cols = [col for col in df.columns if col.startswith('pais_consolidated_')]
+    if country_cols:
+        print("   Country Distribution:")
+        
+        underrepresented_countries = []
+        for col in country_cols:
+            count = df[col].sum()
+            percentage = (count / len(df)) * 100
+            status = "⚠️ " if percentage < min_representation_pct else "✅"
+            country = col.replace('pais_consolidated_', '').strip()
+            print(f"      {status} {country}: {count:,} ({percentage:.1f}%)")
+            
+            if percentage < min_representation_pct:
+                underrepresented_countries.append(country)
+        
+        # Calculate baseline country (not in dummy variables)
+        total_other_countries = sum(df[col].sum() for col in country_cols)
+        baseline_count = len(df) - total_other_countries
+        baseline_pct = (baseline_count / len(df)) * 100
+        baseline_status = "⚠️ " if baseline_pct < min_representation_pct else "✅"
+        print(f"      {baseline_status} Other countries (baseline): {baseline_count:,} ({baseline_pct:.1f}%)")
+        
+        if underrepresented_countries:
+            print(f"   🚨 Underrepresented countries: {underrepresented_countries}")
+        else:
+            print(f"   ✅ All countries well represented")
+    
+    # =============================================================================
+    # 5. RETIREMENT STATUS ANALYSIS
+    # =============================================================================
+    print(f"\n🏖️ RETIREMENT STATUS ANALYSIS:")
+    print("-" * 30)
+    
+    if 'is_retired' in df.columns:
+        retired_count = df['is_retired'].sum()
+        working_count = len(df) - retired_count
+        
+        retired_pct = (retired_count / len(df)) * 100
+        working_pct = (working_count / len(df)) * 100
+        
+        retired_status = "⚠️ " if retired_pct < min_representation_pct else "✅"
+        working_status = "⚠️ " if working_pct < min_representation_pct else "✅"
+        
+        print(f"      {retired_status} Retired: {retired_count:,} ({retired_pct:.1f}%)")
+        print(f"      {working_status} Working: {working_count:,} ({working_pct:.1f}%)")
+        
+        if retired_pct < min_representation_pct:
+            print(f"   🚨 Very few retired customers - consider grouping or special handling")
+        elif retired_pct > 50:
+            print(f"   🚨 Majority retired customers - check if this is expected")
+        else:
+            print(f"   ✅ Retirement status distribution reasonable")
+    
+    # =============================================================================
+    # 6. SUMMARY AND RECOMMENDATIONS
+    # =============================================================================
+    print(f"\n💡 SUMMARY AND RECOMMENDATIONS:")
+    print("-" * 30)
+    
+    # Collect all underrepresented groups
+    all_underrepresented = []
+    
+    if 'underrepresented_age' in locals():
+        all_underrepresented.extend([f"Age: {group}" for group in underrepresented_age])
+    
+    if 'underrepresented_marital' in locals():
+        all_underrepresented.extend([f"Marital: {group}" for group in underrepresented_marital])
+    
+    if 'underrepresented_countries' in locals():
+        all_underrepresented.extend([f"Country: {group}" for group in underrepresented_countries])
+    
+    if all_underrepresented:
+        print(f"   🚨 UNDERREPRESENTED GROUPS FOUND:")
+        for group in all_underrepresented:
+            print(f"      • {group}")
+        
+        print(f"\n   📋 RECOMMENDED ACTIONS:")
+        print(f"      1. Consider grouping small categories into 'Others'")
+        print(f"      2. Use stratified sampling to ensure representation")
+        print(f"      3. Apply class weights in model training")
+        print(f"      4. Consider collecting more data for underrepresented groups")
+        print(f"      5. Use techniques like SMOTE for synthetic data generation")
+        
+    else:
+        print(f"   ✅ ALL DEMOGRAPHIC GROUPS WELL REPRESENTED!")
+        print(f"   📋 Dataset appears balanced for demographic features")
+    
+    # Data quality summary
+    print(f"\n📊 DATA QUALITY SUMMARY:")
+    print(f"   • Total records: {len(df):,}")
+    print(f"   • Demographic features analyzed: {len(age_group_cols) + len(gender_cols) + len(marital_cols) + len(country_cols) + 1}")
+    print(f"   • Minimum representation threshold: {min_representation_pct}%")
+
+# =============================================================================
+# RUN THE ANALYSIS
+# =============================================================================
+
+# Run the demographic analysis
+analyze_demographic_representation(train_df_enhanced_0, min_representation_pct=2.0)
+
+print(f"\n✅ DEMOGRAPHIC ANALYSIS COMPLETE!")
+
+👥 DEMOGRAPHIC REPRESENTATION ANALYSIS
+============================================================
+📊 Dataset size: 22,370 records
+⚠️  Flagging groups with < 2.0% representation
+------------------------------------------------------------
+
+🎂 AGE ANALYSIS:
+------------------------------
+   Basic Age Statistics:
+      Mean: 48.7
+      Median: 48.0
+      Min: 20.0
+      Max: 98.0
+      Missing: 0 (0.0%)
+
+👫 GENDER ANALYSIS:
+------------------------------
+   Gender Distribution:
+      ✅ Male: 5,017 (22.4%)
+      ✅ Female: 17,353 (77.6%)
+   🚨 Gender imbalance detected (ratio: 0.29)
+
+💍 MARITAL STATUS ANALYSIS:
+------------------------------
+   Marital Status Distribution:
+      ⚠️  Others: 20 (0.1%)
+      ✅ Soltero: 12,729 (56.9%)
+      ✅ Married (baseline): 9,621 (43.0%)
+   🚨 Underrepresented marital status: ['Others']
+
+🌍 COUNTRY ANALYSIS:
+------------------------------
+   Country Distribution:
+      ✅ PANAMA: 22,351 (99.9%)
+      ⚠️  Other countries (baseline): 19 (0.1%)
+   ✅ All countries well represented
+
+🏖️ RETIREMENT STATUS ANALYSIS:
+------------------------------
+
+💡 SUMMARY AND RECOMMENDATIONS:
+------------------------------
+   🚨 UNDERREPRESENTED GROUPS FOUND:
+      • Marital: Others
+
+   📋 RECOMMENDED ACTIONS:
+      1. Consider grouping small categories into 'Others'
+      2. Use stratified sampling to ensure representation
+      3. Apply class weights in model training
+      4. Consider collecting more data for underrepresented groups
+      5. Use techniques like SMOTE for synthetic data generation
+
+📊 DATA QUALITY SUMMARY:
+   • Total records: 22,370
+   • Demographic features analyzed: 5
+   • Minimum representation threshold: 2.0%
+
+✅ DEMOGRAPHIC ANALYSIS COMPLETE!
+
+# %%
+# =============================================================================
+# GENDER BALANCE AUGMENTATION FUNCTION (WITH LOW INCOME BOOST)
+# =============================================================================
+import pandas as pd
+import numpy as np
+from sklearn.utils import resample
+
+def augment_gender_balance(df, 
+                          target_column='ingresos_reportados',
+                          gender_column='sexo_consolidated_Masculino',
+                          target_ratio=0.4,  # Target male representation (40%)
+                          augmentation_method='synthetic_noise',  # 'synthetic_noise' or 'bootstrap'
+                          noise_level=0.02,  # ±2% noise for synthetic samples
+                          preserve_loan_patterns=True,  # Maintain loan feature relationships
+                          low_income_augmentation=True,  # Enable low income augmentation
+                          low_income_threshold=1000,  # Income threshold for low income augmentation
+                          low_income_boost_factor=1.5,  # Multiplier for low income samples
+                          random_state=42):
+    """
+    Augment minority gender group to achieve better balance and boost low income representation
+    
+    Parameters:
+    -----------
+    df : DataFrame
+        Input dataframe with gender imbalance
+    target_column : str
+        Target variable column name
+    gender_column : str
+        Gender indicator column (1 = Male, 0 = Female)
+    target_ratio : float
+        Target ratio for minority gender (0.4 = 40% male)
+    augmentation_method : str
+        'synthetic_noise' or 'bootstrap'
+    noise_level : float
+        Amount of noise to add to synthetic samples
+    preserve_loan_patterns : bool
+        Whether to maintain loan feature relationships
+    low_income_augmentation : bool
+        Whether to apply additional augmentation for low income samples
+    low_income_threshold : float
+        Income threshold below which samples are considered low income
+    low_income_boost_factor : float
+        Multiplier for increasing low income sample representation
+    random_state : int
+        Random seed for reproducibility
+    """
+    
+    print("👫 GENDER BALANCE AUGMENTATION (WITH LOW INCOME BOOST)")
+    print("=" * 60)
+    
+    # Set random seed
+    np.random.seed(random_state)
+    
+    # Create a copy to avoid modifying original
+    df_balanced = df.copy()
+    
+    # Analyze current gender distribution
+    male_count = df_balanced[gender_column].sum()
+    female_count = len(df_balanced) - male_count
+    total_count = len(df_balanced)
+    
+    male_ratio = male_count / total_count
+    female_ratio = female_count / total_count
+    
+    print(f"📊 Current Distribution:")
+    print(f"   Male: {male_count:,} ({male_ratio:.1%})")
+    print(f"   Female: {female_count:,} ({female_ratio:.1%})")
+    print(f"   Total: {total_count:,}")
+    
+    # Analyze low income distribution
+    if low_income_augmentation:
+        low_income_mask = df_balanced[target_column] <= low_income_threshold
+        low_income_count = low_income_mask.sum()
+        low_income_percentage = (low_income_count / total_count) * 100
+        
+        print(f"\n💰 Low Income Analysis (≤ ${low_income_threshold}):")
+        print(f"   Low income records: {low_income_count:,} ({low_income_percentage:.1f}%)")
+        
+        # Low income by gender
+        low_income_male = df_balanced[low_income_mask & (df_balanced[gender_column] == 1)].shape[0]
+        low_income_female = df_balanced[low_income_mask & (df_balanced[gender_column] == 0)].shape[0]
+        
+        print(f"   Low income males: {low_income_male:,}")
+        print(f"   Low income females: {low_income_female:,}")
+    
+    # Determine minority gender and calculate needed samples
+    if male_ratio < female_ratio:
+        minority_gender = 'Male'
+        minority_value = 1
+        minority_count = male_count
+        majority_count = female_count
+        target_minority_ratio = target_ratio
+    else:
+        minority_gender = 'Female'
+        minority_value = 0
+        minority_count = female_count
+        majority_count = male_count
+        target_minority_ratio = 1 - target_ratio
+    
+    # Calculate how many samples we need to add
+    target_total = majority_count / (1 - target_minority_ratio)
+    target_minority_count = int(target_total * target_minority_ratio)
+    samples_needed = target_minority_count - minority_count
+    
+    print(f"\n🎯 Target Distribution:")
+    print(f"   Target {minority_gender} ratio: {target_minority_ratio:.1%}")
+    print(f"   Current {minority_gender}: {minority_count:,}")
+    print(f"   Target {minority_gender}: {target_minority_count:,}")
+    print(f"   Samples needed: {samples_needed:,}")
+    
+    if samples_needed <= 0:
+        print(f"✅ No gender augmentation needed - {minority_gender} already well represented")
+        
+        # Still apply low income augmentation if enabled
+        if low_income_augmentation and low_income_percentage < 10:  # If less than 10% low income
+            print(f"\n💰 Applying Low Income Augmentation...")
+            df_balanced = apply_low_income_boost(df_balanced, target_column, low_income_threshold, 
+                                               low_income_boost_factor, augmentation_method, 
+                                               noise_level, random_state)
+        
+        return df_balanced
+    
+    # Get minority gender samples
+    minority_samples = df_balanced[df_balanced[gender_column] == minority_value].copy()
+    
+    print(f"\n🔧 Augmentation Method: {augmentation_method}")
+    print(f"   Base samples for augmentation: {len(minority_samples):,}")
+    
+    # Identify feature columns (exclude IDs, target, and metadata)
+    exclude_cols = ['cliente', 'identificador_unico', target_column, 'data_source', 'processing_timestamp']
+    feature_cols = [col for col in df_balanced.columns if col not in exclude_cols]
+    
+    # Identify different types of features for appropriate augmentation
+    binary_cols = []
+    continuous_cols = []
+    loan_related_cols = []
+    
+    for col in feature_cols:
+        if col.startswith(('monto_', 'tasa_', 'loan_', 'balance_', 'saldo')):
+            loan_related_cols.append(col)
+        elif df_balanced[col].nunique() == 2 and set(df_balanced[col].unique()).issubset({0, 1, np.nan}):
+            binary_cols.append(col)
+        elif pd.api.types.is_numeric_dtype(df_balanced[col]):
+            continuous_cols.append(col)
+    
+    print(f"   Binary features: {len(binary_cols)}")
+    print(f"   Continuous features: {len(continuous_cols)}")
+    print(f"   Loan-related features: {len(loan_related_cols)}")
+    
+    # Calculate low income boost for minority gender
+    low_income_boost_samples = 0
+    if low_income_augmentation:
+        minority_low_income = minority_samples[minority_samples[target_column] <= low_income_threshold]
+        low_income_boost_samples = int(len(minority_low_income) * (low_income_boost_factor - 1))
+        print(f"   Low income boost samples: {low_income_boost_samples:,}")
+    
+    # Generate synthetic samples
+    augmented_samples = []
+    
+    # Regular gender balance samples
+    for i in range(samples_needed):
+        # Select a random base sample from minority gender
+        base_idx = np.random.choice(minority_samples.index)
+        base_sample = minority_samples.loc[base_idx].copy()
+        
+        # Apply augmentation based on method
+        base_sample = apply_augmentation_method(base_sample, minority_samples, augmentation_method,
+                                              noise_level, continuous_cols, loan_related_cols, 
+                                              binary_cols, preserve_loan_patterns)
+        
+        # Ensure gender remains the same
+        base_sample[gender_column] = minority_value
+        
+        # Generate new unique IDs
+        base_sample['cliente'] = f"SYNTH_{minority_gender}_{i+1:06d}"
+        base_sample['identificador_unico'] = f"SYN_{minority_gender}_{i+1:08d}"
+        
+        augmented_samples.append(base_sample)
+    
+    # Additional low income samples
+    if low_income_augmentation and low_income_boost_samples > 0:
+        minority_low_income = minority_samples[minority_samples[target_column] <= low_income_threshold]
+        
+        if len(minority_low_income) > 0:
+            print(f"   Generating {low_income_boost_samples:,} additional low income samples...")
+            
+            for i in range(low_income_boost_samples):
+                # Preferentially select from low income samples
+                base_idx = np.random.choice(minority_low_income.index)
+                base_sample = minority_low_income.loc[base_idx].copy()
+                
+                # Apply lighter augmentation to preserve low income characteristics
+                base_sample = apply_augmentation_method(base_sample, minority_low_income, augmentation_method,
+                                                      noise_level * 0.5, continuous_cols, loan_related_cols, 
+                                                      binary_cols, preserve_loan_patterns)
+                
+                # Ensure income stays in low income range
+                if base_sample[target_column] > low_income_threshold:
+                    base_sample[target_column] = np.random.uniform(50, low_income_threshold * 0.9)
+                
+                # Ensure gender remains the same
+                base_sample[gender_column] = minority_value
+                
+                # Generate new unique IDs
+                base_sample['cliente'] = f"SYNTH_LOW_{minority_gender}_{i+1:06d}"
+                base_sample['identificador_unico'] = f"SYN_LOW_{minority_gender}_{i+1:08d}"
+                
+                augmented_samples.append(base_sample)
+    
+    # Create DataFrame from augmented samples
+    if augmented_samples:
+        augmented_df = pd.DataFrame(augmented_samples)
+        
+        # Combine original and augmented data
+        df_balanced = pd.concat([df_balanced, augmented_df], ignore_index=True)
+        
+        print(f"\n✅ Augmentation Complete:")
+        print(f"   Synthetic samples created: {len(augmented_samples):,}")
+        print(f"   - Gender balance samples: {samples_needed:,}")
+        if low_income_augmentation:
+            print(f"   - Low income boost samples: {low_income_boost_samples:,}")
+        print(f"   Original dataset: {total_count:,}")
+        print(f"   Balanced dataset: {len(df_balanced):,}")
+        
+        # Verify new distribution
+        new_male_count = df_balanced[gender_column].sum()
+        new_female_count = len(df_balanced) - new_male_count
+        new_total = len(df_balanced)
+        
+        new_male_ratio = new_male_count / new_total
+        new_female_ratio = new_female_count / new_total
+        
+        print(f"\n📊 New Distribution:")
+        print(f"   Male: {new_male_count:,} ({new_male_ratio:.1%})")
+        print(f"   Female: {new_female_count:,} ({new_female_ratio:.1%})")
+        print(f"   Gender ratio: {min(new_male_ratio, new_female_ratio) / max(new_male_ratio, new_female_ratio):.2f}")
+        
+        # Verify low income distribution
+        if low_income_augmentation:
+            new_low_income_count = (df_balanced[target_column] <= low_income_threshold).sum()
+            new_low_income_percentage = (new_low_income_count / new_total) * 100
+            print(f"   Low income (≤ ${low_income_threshold}): {new_low_income_count:,} ({new_low_income_percentage:.1f}%)")
+            print(f"   Low income increase: +{new_low_income_count - low_income_count:,} samples")
+        
+        if min(new_male_ratio, new_female_ratio) / max(new_male_ratio, new_female_ratio) > 0.35:
+            print(f"   ✅ Gender balance significantly improved!")
+        else:
+            print(f"   ⚠️  Consider additional augmentation for better balance")
+    
+    else:
+        print(f"❌ No samples were generated")
+    
+    return df_balanced
+
+
+def apply_augmentation_method(base_sample, source_samples, augmentation_method, noise_level, 
+                            continuous_cols, loan_related_cols, binary_cols, preserve_loan_patterns):
+    """Helper function to apply augmentation method to a sample"""
+    
+    if augmentation_method == 'synthetic_noise':
+        # Add controlled noise to continuous features
+        for col in continuous_cols:
+            if col not in loan_related_cols:  # Handle loan features separately
+                original_value = base_sample[col]
+                if pd.notna(original_value) and original_value != 0:
+                    # Add noise proportional to the value
+                    noise = np.random.uniform(-noise_level, noise_level)
+                    base_sample[col] = original_value * (1 + noise)
+        
+        # Handle loan-related features with special care
+        if preserve_loan_patterns and loan_related_cols:
+            # Maintain relationships between loan features
+            has_loan = base_sample.get('has_loan_amount', 0) if 'has_loan_amount' in base_sample else 0
+            
+            if has_loan:
+                # If customer has loan, add correlated noise to loan features
+                loan_noise_factor = np.random.uniform(0.95, 1.05)  # ±5% variation
+                
+                for col in loan_related_cols:
+                    if 'monto_' in col and pd.notna(base_sample[col]) and base_sample[col] > 0:
+                        base_sample[col] *= loan_noise_factor
+                    elif 'ratio' in col and pd.notna(base_sample[col]):
+                        # Ratios get smaller noise
+                        base_sample[col] *= np.random.uniform(0.98, 1.02)
+        
+        # Binary features: occasionally flip with low probability
+        for col in binary_cols:
+            if np.random.random() < 0.05:  # 5% chance to flip
+                base_sample[col] = 1 - base_sample[col]
+    
+    elif augmentation_method == 'bootstrap':
+        # Bootstrap resampling with slight modifications
+        # Select another random sample and blend some features
+        blend_idx = np.random.choice(source_samples.index)
+        blend_sample = source_samples.loc[blend_idx]
+        
+        # Blend continuous features
+        blend_ratio = np.random.uniform(0.1, 0.3)  # 10-30% blend
+        for col in continuous_cols:
+            if pd.notna(base_sample[col]) and pd.notna(blend_sample[col]):
+                base_sample[col] = (base_sample[col] * (1 - blend_ratio) + 
+                                  blend_sample[col] * blend_ratio)
+    
+    return base_sample
+
+
+def apply_low_income_boost(df, target_column, low_income_threshold, boost_factor, 
+                          augmentation_method, noise_level, random_state):
+    """Apply additional augmentation specifically for low income samples"""
+    
+    np.random.seed(random_state + 1)  # Different seed for low income boost
+    
+    low_income_samples = df[df[target_column] <= low_income_threshold].copy()
+    boost_samples_needed = int(len(low_income_samples) * (boost_factor - 1))
+    
+    if boost_samples_needed <= 0:
+        return df
+    
+    print(f"   Generating {boost_samples_needed:,} additional low income samples...")
+    
+    # Identify feature columns
+    exclude_cols = ['cliente', 'identificador_unico', target_column, 'data_source', 'processing_timestamp']
+    feature_cols = [col for col in df.columns if col not in exclude_cols]
+    
+    continuous_cols = [col for col in feature_cols if pd.api.types.is_numeric_dtype(df[col])]
+    binary_cols = [col for col in feature_cols if df[col].nunique() == 2]
+    loan_related_cols = [col for col in feature_cols if col.startswith(('monto_', 'tasa_', 'loan_', 'balance_', 'saldo'))]
+    
+    augmented_samples = []
+    
+    for i in range(boost_samples_needed):
+        base_idx = np.random.choice(low_income_samples.index)
+        base_sample = low_income_samples.loc[base_idx].copy()
+        
+        # Apply lighter augmentation
+        base_sample = apply_augmentation_method(base_sample, low_income_samples, augmentation_method,
+                                              noise_level * 0.5, continuous_cols, loan_related_cols, 
+                                              binary_cols, True)
+        
+        # Ensure income stays in low income range
+        if base_sample[target_column] > low_income_threshold:
+            base_sample[target_column] = np.random.uniform(50, low_income_threshold * 0.9)
+        
+        # Generate new unique IDs
+        base_sample['cliente'] = f"SYNTH_LOW_INCOME_{i+1:06d}"
+        base_sample['identificador_unico'] = f"SYN_LOW_INC_{i+1:08d}"
+        
+        augmented_samples.append(base_sample)
+    
+    if augmented_samples:
+        augmented_df = pd.DataFrame(augmented_samples)
+        df = pd.concat([df, augmented_df], ignore_index=True)
+    
+    return df
+
+train_df_balanced = augment_gender_balance(
+    df=train_df_enhanced_0,
+    target_column='ingresos_reportados',
+    gender_column='sexo_consolidated_Masculino',
+    target_ratio=0.35,
+    low_income_augmentation=True,
+    low_income_threshold=700,  # Boost samples with income ≤ $1000
+    low_income_boost_factor=1.5,  # 50% more low income samples
+    random_state=42
+)
+
+👫 GENDER BALANCE AUGMENTATION (WITH LOW INCOME BOOST)
+============================================================
+📊 Current Distribution:
+   Male: 5,017 (22.4%)
+   Female: 17,353 (77.6%)
+   Total: 22,370
+
+💰 Low Income Analysis (≤ $700):
+   Low income records: 4,961 (22.2%)
+   Low income males: 963
+   Low income females: 3,998
+
+🎯 Target Distribution:
+   Target Male ratio: 35.0%
+   Current Male: 5,017
+   Target Male: 9,343
+   Samples needed: 4,326
+
+🔧 Augmentation Method: synthetic_noise
+   Base samples for augmentation: 5,017
+   Binary features: 51
+   Continuous features: 30
+   Loan-related features: 17
+   Low income boost samples: 481
+   Generating 481 additional low income samples...
+
+✅ Augmentation Complete:
+   Synthetic samples created: 4,807
+   - Gender balance samples: 4,326
+   - Low income boost samples: 481
+   Original dataset: 22,370
+   Balanced dataset: 27,177
+
+📊 New Distribution:
+   Male: 9,824 (36.1%)
+   Female: 17,353 (63.9%)
+   Gender ratio: 0.57
+   Low income (≤ $700): 6,249 (23.0%)
+   Low income increase: +1,288 samples
+   ✅ Gender balance significantly improved!

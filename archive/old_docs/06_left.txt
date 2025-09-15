@@ -1,0 +1,41 @@
+## Comprehensive Nested CV Visualizations
+
+### Dashboard Components Explanation
+
+**Six-Panel Performance Dashboard:**
+
+**Panel 1 - Model Comparison by RMSE:**
+
+- **Purpose:** Primary metric comparison across all algorithms
+- **Insight:** Clear hierarchy from Linear Regression (baseline) to XGBoost (best)
+- **Business Value:** Justifies investment in complex algorithms
+
+**Panel 2 - RMSE Across CV Folds:**
+
+- **Purpose:** Shows consistency of best model across different data splits
+- **Insight:** XGBoost performance stable across all folds
+- **Business Value:** Confidence in model reliability
+
+**Panel 3 - Model Comparison by MAE:**
+
+- **Purpose:** Secondary metric validation
+- **Insight:** Confirms RMSE rankings with robust error metric
+- **Business Value:** Multiple perspectives on model performance
+
+**Panel 4 - Nested CV vs Test Set:**
+
+- **Purpose:** Validates nested CV effectiveness
+- **Insight:** Shows realistic performance expectations
+- **Business Value:** Honest assessment of production performance
+
+**Panel 5 - Predictions vs Actual:**
+
+- **Purpose:** Visual assessment of prediction quality
+- **Insight:** Good correlation with some scatter at extremes
+- **Business Value:** Understanding of model limitations
+
+**Panel 6 - Residuals Plot:**
+
+- **Purpose:** Identifies systematic prediction errors
+- **Insight:** Random scatter indicates unbiased predictions
+- **Business Value:** Confirms model doesn't systematically favor certain income ranges
