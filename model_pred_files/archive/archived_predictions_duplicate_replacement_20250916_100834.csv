@@ -1,0 +1,2 @@
+identificador_unico,cliente,predicted_income,income_lower_90,income_upper_90,income_segment,confidence_category,business_priority,recommendation,confidence_level,ci_width,prediction_date,model_version,batch_id,prediction_date_only
+9-706-693,3642,1858.9300537109373,1348.0,2613.949951171875,MIDDLE_INCOME_GROWTH,MEDIUM_CONFIDENCE,REVIEW_REQUIRED,Requires manual review before product offers,0.9,1265.949951171875,2025-09-16 10:07:43,XGBoost_v1.0_Final,20250916_100743,2025-09-16

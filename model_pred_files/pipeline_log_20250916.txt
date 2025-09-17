@@ -1,0 +1,283 @@
+[2025-09-16 09:48:31] 🧪 COMPREHENSIVE DATASET TESTING FRAMEWORK
+[2025-09-16 09:48:31] ================================================================================
+[2025-09-16 09:48:31] 📂 Found 4 datasets to test:
+[2025-09-16 09:48:31]    1. 00_test.csv
+[2025-09-16 09:48:31]    2. 01_test.csv
+[2025-09-16 09:48:31]    3. 02_test.csv
+[2025-09-16 09:48:31]    4. final_info_clientes.csv
+[2025-09-16 09:48:31] 
+================================================================================
+[2025-09-16 09:48:31] 🧪 TESTING DATASET 1/4
+[2025-09-16 09:48:31] ================================================================================
+[2025-09-16 09:48:31] 
+🧪 TESTING DATASET: 00_test.csv
+[2025-09-16 09:48:31] ================================================================================
+[2025-09-16 09:48:31] 📂 Step 1: Loading dataset...
+[2025-09-16 09:48:31] ✅ Dataset loaded: 25 rows, 24 columns
+[2025-09-16 09:48:31] 🔍 Step 2: Column validation...
+[2025-09-16 09:48:31] 🔍 Step 3: Null value analysis...
+[2025-09-16 09:48:31] 🔧 Step 4: Testing feature engineering...
+[2025-09-16 09:48:31] 🔧 Testing feature engineering pipeline...
+[2025-09-16 09:48:31] ✅ Feature engineering validation passed
+[2025-09-16 09:48:31] 🤖 Step 5: Testing model prediction...
+[2025-09-16 09:48:31] 🤖 Testing model prediction...
+[2025-09-16 09:48:31] ✅ Model files found
+[2025-09-16 09:48:31] ✅ Model prediction validation passed
+[2025-09-16 09:48:31] ✅ Dataset test completed successfully!
+[2025-09-16 09:48:31] ⏱️  Test completed in 0.02 seconds
+[2025-09-16 09:48:31] 
+================================================================================
+[2025-09-16 09:48:31] 🧪 TESTING DATASET 2/4
+[2025-09-16 09:48:31] ================================================================================
+[2025-09-16 09:48:31] 
+🧪 TESTING DATASET: 01_test.csv
+[2025-09-16 09:48:31] ================================================================================
+[2025-09-16 09:48:31] 📂 Step 1: Loading dataset...
+[2025-09-16 09:48:31] ✅ Dataset loaded: 1 rows, 24 columns
+[2025-09-16 09:48:31] 🔍 Step 2: Column validation...
+[2025-09-16 09:48:31] 🔍 Step 3: Null value analysis...
+[2025-09-16 09:48:31] 🔧 Step 4: Testing feature engineering...
+[2025-09-16 09:48:31] 🔧 Testing feature engineering pipeline...
+[2025-09-16 09:48:31] ✅ Feature engineering validation passed
+[2025-09-16 09:48:31] 🤖 Step 5: Testing model prediction...
+[2025-09-16 09:48:31] 🤖 Testing model prediction...
+[2025-09-16 09:48:31] ✅ Model files found
+[2025-09-16 09:48:31] ✅ Model prediction validation passed
+[2025-09-16 09:48:31] ✅ Dataset test completed successfully!
+[2025-09-16 09:48:31] ⏱️  Test completed in 0.02 seconds
+[2025-09-16 09:48:31] 
+================================================================================
+[2025-09-16 09:48:31] 🧪 TESTING DATASET 3/4
+[2025-09-16 09:48:31] ================================================================================
+[2025-09-16 09:48:31] 
+🧪 TESTING DATASET: 02_test.csv
+[2025-09-16 09:48:31] ================================================================================
+[2025-09-16 09:48:31] 📂 Step 1: Loading dataset...
+[2025-09-16 09:48:31] ✅ Dataset loaded: 1 rows, 24 columns
+[2025-09-16 09:48:31] 🔍 Step 2: Column validation...
+[2025-09-16 09:48:31] 🔍 Step 3: Null value analysis...
+[2025-09-16 09:48:31] 🔧 Step 4: Testing feature engineering...
+[2025-09-16 09:48:31] 🔧 Testing feature engineering pipeline...
+[2025-09-16 09:48:31] ✅ Feature engineering validation passed
+[2025-09-16 09:48:31] 🤖 Step 5: Testing model prediction...
+[2025-09-16 09:48:31] 🤖 Testing model prediction...
+[2025-09-16 09:48:31] ✅ Model files found
+[2025-09-16 09:48:31] ✅ Model prediction validation passed
+[2025-09-16 09:48:31] ✅ Dataset test completed successfully!
+[2025-09-16 09:48:31] ⏱️  Test completed in 0.02 seconds
+[2025-09-16 09:48:31] 
+================================================================================
+[2025-09-16 09:48:31] 🧪 TESTING DATASET 4/4
+[2025-09-16 09:48:31] ================================================================================
+[2025-09-16 09:48:31] 
+🧪 TESTING DATASET: final_info_clientes.csv
+[2025-09-16 09:48:31] ================================================================================
+[2025-09-16 09:48:31] 📂 Step 1: Loading dataset...
+[2025-09-16 09:48:32] ✅ Dataset loaded: 29319 rows, 24 columns
+[2025-09-16 09:48:32] 🔍 Step 2: Column validation...
+[2025-09-16 09:48:32] 🔍 Step 3: Null value analysis...
+[2025-09-16 09:48:32] 🔧 Step 4: Testing feature engineering...
+[2025-09-16 09:48:32] 🔧 Testing feature engineering pipeline...
+[2025-09-16 09:48:32] ✅ Feature engineering validation passed
+[2025-09-16 09:48:32] 🤖 Step 5: Testing model prediction...
+[2025-09-16 09:48:32] 🤖 Testing model prediction...
+[2025-09-16 09:48:32] ✅ Model files found
+[2025-09-16 09:48:32] ✅ Model prediction validation passed
+[2025-09-16 09:48:32] ✅ Dataset test completed successfully!
+[2025-09-16 09:48:32] ⏱️  Test completed in 0.45 seconds
+[2025-09-16 09:48:32] 
+================================================================================
+[2025-09-16 09:48:32] 🎯 FINAL TESTING SUMMARY
+[2025-09-16 09:48:32] ================================================================================
+[2025-09-16 09:48:32] 📊 Total datasets tested: 4
+[2025-09-16 09:48:32] ✅ Successful tests: 4
+[2025-09-16 09:48:32] ❌ Failed tests: 0
+[2025-09-16 09:48:32] ⏱️  Total processing time: 0.53 seconds
+[2025-09-16 09:52:06] 🚀 COMPLETE END-TO-END PRODUCTION PIPELINE
+[2025-09-16 09:52:06] ================================================================================
+[2025-09-16 09:52:06] 🎯 OBJECTIVE: Raw data → Clean features → Predictions → Master dataset
+[2025-09-16 09:52:06] 📋 PIPELINE: Part 1 → Part 2 → Part 3 → Complete
+[2025-09-16 09:52:06] ================================================================================
+[2025-09-16 09:52:06] 
+📋 STEP 0: ENVIRONMENT VALIDATION
+[2025-09-16 09:52:06] 🔍 VALIDATING FILE PATHS AND DEPENDENCIES
+[2025-09-16 09:52:06] ============================================================
+[2025-09-16 09:52:06] ✅ raw_customer_data: production_test/temp_00_test.csv
+[2025-09-16 09:52:06] ✅ trained_model: .\models\production\production_model_catboost_all_data.pkl
+[2025-09-16 09:52:06] ✅ frequency_mappings: .\models\production\production_frequency_mappings_catboost.pkl
+[2025-09-16 09:52:06] ✅ predictions: .\model_pred_files
+[2025-09-16 09:52:06] ✅ temp_data: .\data\temp
+[2025-09-16 09:52:06] ✅ All file paths validated successfully
+[2025-09-16 09:52:06] 
+📋 STEP 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-16 09:52:06] 
+🚀 PART 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-16 09:52:06] ============================================================
+[2025-09-16 09:52:06] ❌ Part 1 failed: Cannot import production_part1_data_cleaning.py
+[2025-09-16 09:52:06]    Error: No module named 'production_part1_data_cleaning'
+[2025-09-16 09:52:06] 🔧 TEAM ACTION: Ensure production_part1_data_cleaning.py is in the same directory
+[2025-09-16 09:52:06] ❌ Pipeline aborted: Part 1 failed
+[2025-09-16 09:52:06] 
+🧹 CLEANING UP TEMPORARY FILES
+[2025-09-16 10:05:59] 🚀 COMPLETE END-TO-END PRODUCTION PIPELINE
+[2025-09-16 10:05:59] ================================================================================
+[2025-09-16 10:05:59] 🎯 OBJECTIVE: Raw data → Clean features → Predictions → Master dataset
+[2025-09-16 10:05:59] 📋 PIPELINE: Part 1 → Part 2 → Part 3 → Complete
+[2025-09-16 10:05:59] ================================================================================
+[2025-09-16 10:05:59] 
+📋 STEP 0: ENVIRONMENT VALIDATION
+[2025-09-16 10:05:59] 🔍 VALIDATING FILE PATHS AND DEPENDENCIES
+[2025-09-16 10:05:59] ============================================================
+[2025-09-16 10:05:59] ✅ raw_customer_data: production_test/temp_00_test.csv
+[2025-09-16 10:05:59] ✅ trained_model: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\models\production\production_model_catboost_all_data.pkl
+[2025-09-16 10:05:59] ✅ frequency_mappings: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\models\production\production_frequency_mappings_catboost.pkl
+[2025-09-16 10:05:59] ✅ predictions: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\model_pred_files
+[2025-09-16 10:05:59] ✅ temp_data: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\data\temp
+[2025-09-16 10:05:59] ✅ All file paths validated successfully
+[2025-09-16 10:05:59] 
+📋 STEP 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-16 10:05:59] 
+🚀 PART 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-16 10:05:59] ============================================================
+[2025-09-16 10:05:59] ✅ Part 1 completed: (25, 13)
+[2025-09-16 10:05:59] 
+📋 STEP 2: MODEL INFERENCE & PREDICTIONS
+[2025-09-16 10:05:59] 
+🚀 PART 2: MODEL INFERENCE & PREDICTIONS
+[2025-09-16 10:05:59] ============================================================
+[2025-09-16 10:06:01] ✅ Part 2 completed: (25, 9)
+[2025-09-16 10:06:01] 
+📋 STEP 3: BUSINESS FORMATTING & INCREMENTAL STORAGE
+[2025-09-16 10:06:01] 
+🚀 PART 3: BUSINESS FORMATTING & INCREMENTAL STORAGE
+[2025-09-16 10:06:01] ============================================================
+[2025-09-16 10:06:03] ✅ Part 3 completed: Incremental storage successful
+[2025-09-16 10:06:03] 
+🎉 COMPLETE PIPELINE SUCCESS!
+[2025-09-16 10:06:03] ============================================================
+[2025-09-16 10:06:03] ⏱️  Processing time: 4.06 seconds
+[2025-09-16 10:06:03] 👥 Customers processed: 25
+[2025-09-16 10:06:03] 💰 Average predicted income: $1,745.24
+[2025-09-16 10:06:03] 📊 Total predictions in master: 29,344
+[2025-09-16 10:06:03] 🆔 Unique customers: 29,319
+[2025-09-16 10:06:03] 
+📂 OUTPUT FILES:
+[2025-09-16 10:06:03]    📄 master_predictions.csv
+[2025-09-16 10:06:03]    📄 master_predictions.json
+[2025-09-16 10:06:03]    📁 archive/ (for old predictions)
+[2025-09-16 10:06:03]    📝 pipeline_log_20250916.txt
+[2025-09-16 10:06:03] 
+🎯 PIPELINE COMPLETED SUCCESSFULLY!
+[2025-09-16 10:06:03]    Ready for business use and system integration
+[2025-09-16 10:06:03] 
+🧹 CLEANING UP TEMPORARY FILES
+[2025-09-16 10:06:03] 🗑️  Removed: clean_data_20250916_100559.csv
+[2025-09-16 10:06:03] 🗑️  Removed: predictions_20250916_100559.csv
+[2025-09-16 10:07:42] 🚀 COMPLETE END-TO-END PRODUCTION PIPELINE
+[2025-09-16 10:07:42] ================================================================================
+[2025-09-16 10:07:42] 🎯 OBJECTIVE: Raw data → Clean features → Predictions → Master dataset
+[2025-09-16 10:07:42] 📋 PIPELINE: Part 1 → Part 2 → Part 3 → Complete
+[2025-09-16 10:07:42] ================================================================================
+[2025-09-16 10:07:42] 
+📋 STEP 0: ENVIRONMENT VALIDATION
+[2025-09-16 10:07:42] 🔍 VALIDATING FILE PATHS AND DEPENDENCIES
+[2025-09-16 10:07:42] ============================================================
+[2025-09-16 10:07:42] ✅ raw_customer_data: production_test/temp_01_test.csv
+[2025-09-16 10:07:42] ✅ trained_model: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\models\production\production_model_catboost_all_data.pkl
+[2025-09-16 10:07:42] ✅ frequency_mappings: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\models\production\production_frequency_mappings_catboost.pkl
+[2025-09-16 10:07:42] ✅ predictions: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\model_pred_files
+[2025-09-16 10:07:42] ✅ temp_data: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\data\temp
+[2025-09-16 10:07:42] ✅ All file paths validated successfully
+[2025-09-16 10:07:42] 
+📋 STEP 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-16 10:07:42] 
+🚀 PART 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-16 10:07:42] ============================================================
+[2025-09-16 10:07:42] ✅ Part 1 completed: (1, 13)
+[2025-09-16 10:07:42] 
+📋 STEP 2: MODEL INFERENCE & PREDICTIONS
+[2025-09-16 10:07:42] 
+🚀 PART 2: MODEL INFERENCE & PREDICTIONS
+[2025-09-16 10:07:42] ============================================================
+[2025-09-16 10:07:43] ✅ Part 2 completed: (1, 9)
+[2025-09-16 10:07:43] 
+📋 STEP 3: BUSINESS FORMATTING & INCREMENTAL STORAGE
+[2025-09-16 10:07:43] 
+🚀 PART 3: BUSINESS FORMATTING & INCREMENTAL STORAGE
+[2025-09-16 10:07:43] ============================================================
+[2025-09-16 10:07:45] ✅ Part 3 completed: Incremental storage successful
+[2025-09-16 10:07:45] 
+🎉 COMPLETE PIPELINE SUCCESS!
+[2025-09-16 10:07:45] ============================================================
+[2025-09-16 10:07:45] ⏱️  Processing time: 2.39 seconds
+[2025-09-16 10:07:45] 👥 Customers processed: 1
+[2025-09-16 10:07:45] 💰 Average predicted income: $1,745.24
+[2025-09-16 10:07:45] 📊 Total predictions in master: 29,344
+[2025-09-16 10:07:45] 🆔 Unique customers: 29,319
+[2025-09-16 10:07:45] 
+📂 OUTPUT FILES:
+[2025-09-16 10:07:45]    📄 master_predictions.csv
+[2025-09-16 10:07:45]    📄 master_predictions.json
+[2025-09-16 10:07:45]    📁 archive/ (for old predictions)
+[2025-09-16 10:07:45]    📝 pipeline_log_20250916.txt
+[2025-09-16 10:07:45] 
+🎯 PIPELINE COMPLETED SUCCESSFULLY!
+[2025-09-16 10:07:45]    Ready for business use and system integration
+[2025-09-16 10:07:45] 
+🧹 CLEANING UP TEMPORARY FILES
+[2025-09-16 10:07:45] 🗑️  Removed: clean_data_20250916_100742.csv
+[2025-09-16 10:07:45] 🗑️  Removed: predictions_20250916_100742.csv
+[2025-09-16 10:08:34] 🚀 COMPLETE END-TO-END PRODUCTION PIPELINE
+[2025-09-16 10:08:34] ================================================================================
+[2025-09-16 10:08:34] 🎯 OBJECTIVE: Raw data → Clean features → Predictions → Master dataset
+[2025-09-16 10:08:34] 📋 PIPELINE: Part 1 → Part 2 → Part 3 → Complete
+[2025-09-16 10:08:34] ================================================================================
+[2025-09-16 10:08:34] 
+📋 STEP 0: ENVIRONMENT VALIDATION
+[2025-09-16 10:08:34] 🔍 VALIDATING FILE PATHS AND DEPENDENCIES
+[2025-09-16 10:08:34] ============================================================
+[2025-09-16 10:08:34] ✅ raw_customer_data: production_test/temp_02_test.csv
+[2025-09-16 10:08:34] ✅ trained_model: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\models\production\production_model_catboost_all_data.pkl
+[2025-09-16 10:08:34] ✅ frequency_mappings: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\models\production\production_frequency_mappings_catboost.pkl
+[2025-09-16 10:08:34] ✅ predictions: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\model_pred_files
+[2025-09-16 10:08:34] ✅ temp_data: C:\Users\david\OneDrive\Documents\augment-projects\caja-de-ahorros\data\temp
+[2025-09-16 10:08:34] ✅ All file paths validated successfully
+[2025-09-16 10:08:34] 
+📋 STEP 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-16 10:08:34] 
+🚀 PART 1: DATA CLEANING & FEATURE ENGINEERING
+[2025-09-16 10:08:34] ============================================================
+[2025-09-16 10:08:34] ✅ Part 1 completed: (1, 13)
+[2025-09-16 10:08:34] 
+📋 STEP 2: MODEL INFERENCE & PREDICTIONS
+[2025-09-16 10:08:34] 
+🚀 PART 2: MODEL INFERENCE & PREDICTIONS
+[2025-09-16 10:08:34] ============================================================
+[2025-09-16 10:08:34] ✅ Part 2 completed: (1, 9)
+[2025-09-16 10:08:34] 
+📋 STEP 3: BUSINESS FORMATTING & INCREMENTAL STORAGE
+[2025-09-16 10:08:34] 
+🚀 PART 3: BUSINESS FORMATTING & INCREMENTAL STORAGE
+[2025-09-16 10:08:34] ============================================================
+[2025-09-16 10:08:36] ✅ Part 3 completed: Incremental storage successful
+[2025-09-16 10:08:36] 
+🎉 COMPLETE PIPELINE SUCCESS!
+[2025-09-16 10:08:36] ============================================================
+[2025-09-16 10:08:36] ⏱️  Processing time: 2.50 seconds
+[2025-09-16 10:08:36] 👥 Customers processed: 1
+[2025-09-16 10:08:36] 💰 Average predicted income: $1,745.23
+[2025-09-16 10:08:36] 📊 Total predictions in master: 29,344
+[2025-09-16 10:08:36] 🆔 Unique customers: 29,319
+[2025-09-16 10:08:36] 
+📂 OUTPUT FILES:
+[2025-09-16 10:08:36]    📄 master_predictions.csv
+[2025-09-16 10:08:36]    📄 master_predictions.json
+[2025-09-16 10:08:36]    📁 archive/ (for old predictions)
+[2025-09-16 10:08:36]    📝 pipeline_log_20250916.txt
+[2025-09-16 10:08:36] 
+🎯 PIPELINE COMPLETED SUCCESSFULLY!
+[2025-09-16 10:08:36]    Ready for business use and system integration
+[2025-09-16 10:08:36] 
+🧹 CLEANING UP TEMPORARY FILES
+[2025-09-16 10:08:36] 🗑️  Removed: clean_data_20250916_100834.csv
+[2025-09-16 10:08:36] 🗑️  Removed: predictions_20250916_100834.csv

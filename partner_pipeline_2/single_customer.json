@@ -1,0 +1,14 @@
+[
+  {
+    "Cliente": 3642,
+    "Identificador_Unico": "9-706-693",
+    "Edad": 67,
+    "Ocupacion": "JUBILADO",
+    "NombreEmpleadorCliente": "CAJA DE SEGURO SOCIAL",
+    "CargoEmpleoCliente": "JUBILADO",
+    "FechaIngresoEmpleo": "2010-05-15",
+    "saldo": 15000.50,
+    "monto_letra": 450.75,
+    "fecha_inicio": "2020-01-10"
+  }
+]

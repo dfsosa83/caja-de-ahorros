@@ -1,0 +1,61 @@
+💰 INCOME PREDICTION PIPELINE
+=============================
+
+REQUIRED_COLUMNS = [
+    'Cliente',                    
+    'Identificador_Unico',        
+    'Edad',                       
+    'Ocupacion',                  
+    'NombreEmpleadorCliente',     
+    'CargoEmpleaoCliente',        
+    'FechaIngresoEmpleo',         
+    'saldo',                      
+    'monto_letra',                
+    'fecha_inicio'                
+] 
+
+OPTIONAL_COLUMNS = [
+    'ingresos_reportados',        # TARGET - not needed for prediction
+    'Segmento',                   # Not used in model
+    'Sexo',                       # Not used in final model
+    'Ciudad',                     # Not used in final model  
+    'Pais',                       # Not used in final model
+    'Estado_Civil',               # Not used in final model
+    'productos_activos',          # Not used in model
+    'letras_mensuales',           # Not used in model
+    'fecha_vencimiento',          # Not used in model
+    'ControlDate',                # Metadata
+    'monto_prestamo',             # Not used in model
+    'tasa_prestamo',              # Not used in model
+    'data_source',                # Metadata
+    'processing_timestamp'        # Metadata
+]
+
+
+🚀 QUICK START:
+
+1. Install packages:
+   pip install pandas numpy catboost scikit-learn
+
+2. Test it works:
+   python test.py
+
+3. Use with your data:
+   python income_prediction_pipeline.py your_data.csv
+
+4. Find results:
+   - View on screen
+   - Check saved CSV file
+
+📋 EXAMPLES:
+python income_prediction_pipeline.py example_data.csv
+python income_prediction_pipeline.py example_data.json
+
+📊 DATA FORMATS:
+Read DATA_FORMATS.md for supported formats
+
+📞 NEED HELP?
+Read README.md for more details
+
+🎯 THAT'S IT!
+Just run: python income_prediction_pipeline.py your_data.csv

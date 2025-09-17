@@ -1,0 +1,40 @@
+================================================================================
+🧪 COMPREHENSIVE PRODUCTION PIPELINE TEST REPORT
+================================================================================
+📅 Generated: 2025-09-16 09:48:32
+🎯 Objective: Test production pipeline with multiple datasets
+
+📊 EXECUTIVE SUMMARY
+----------------------------------------
+Total datasets tested: 4
+Successful tests: 4
+Failed tests: 0
+Success rate: 100.0%
+Total processing time: 0.53 seconds
+
+📋 DETAILED TEST RESULTS
+----------------------------------------
+
+1. DATASET: 00_test.csv
+   Status: SUCCESS
+   Processing time: 0.02 seconds
+   Columns: 24 total, 10/10 required
+   Columns with nulls: ['CargoEmpleoCliente', 'FechaIngresoEmpleo', 'monto_letra']
+
+2. DATASET: 01_test.csv
+   Status: SUCCESS
+   Processing time: 0.02 seconds
+   Columns: 24 total, 10/10 required
+
+3. DATASET: 02_test.csv
+   Status: SUCCESS
+   Processing time: 0.02 seconds
+   Columns: 24 total, 10/10 required
+   Columns with nulls: ['Edad', 'Ocupacion', 'NombreEmpleadorCliente', 'CargoEmpleoCliente']
+   Warnings: ["High null percentages: ['Edad: 100.0% null', 'Ocupacion: 100.0% null', 'NombreEmpleadorCliente: 100.0% null', 'CargoEmpleoCliente: 100.0% null']"]
+
+4. DATASET: final_info_clientes.csv
+   Status: SUCCESS
+   Processing time: 0.45 seconds
+   Columns: 24 total, 10/10 required
+   Columns with nulls: ['Ocupacion', 'NombreEmpleadorCliente', 'CargoEmpleoCliente', 'FechaIngresoEmpleo', 'monto_letra']

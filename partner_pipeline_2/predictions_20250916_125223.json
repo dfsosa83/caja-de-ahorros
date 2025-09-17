@@ -1,0 +1,49 @@
+{
+  "metadata": {
+    "total_customers": 5,
+    "average_income": 1828.130126953125,
+    "income_range": {
+      "min": 1815.800048828125,
+      "max": 1839.8499755859375
+    },
+    "generated_at": "2025-09-16T12:52:23.022150",
+    "confidence_level": "90%"
+  },
+  "predictions": [
+    {
+      "identificador_unico": "9-706-693",
+      "cliente": 3642,
+      "predicted_income": 1826.3299560546875,
+      "income_lower_90": 1315.4000244140625,
+      "income_upper_90": 2581.35009765625
+    },
+    {
+      "identificador_unico": "8-904-143",
+      "cliente": 10547,
+      "predicted_income": 1820.3399658203125,
+      "income_lower_90": 1309.4100341796875,
+      "income_upper_90": 2575.360107421875
+    },
+    {
+      "identificador_unico": "8-398-877",
+      "cliente": 13095,
+      "predicted_income": 1839.8499755859375,
+      "income_lower_90": 1328.9200439453125,
+      "income_upper_90": 2594.8701171875
+    },
+    {
+      "identificador_unico": "8-142-410",
+      "cliente": 14504,
+      "predicted_income": 1815.800048828125,
+      "income_lower_90": 1304.8699951171875,
+      "income_upper_90": 2570.820068359375
+    },
+    {
+      "identificador_unico": "8-372-792",
+      "cliente": 20822,
+      "predicted_income": 1838.3299560546875,
+      "income_lower_90": 1327.4000244140625,
+      "income_upper_90": 2593.35009765625
+    }
+  ]
+}

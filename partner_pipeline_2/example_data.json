@@ -1,0 +1,62 @@
+[
+  {
+    "Cliente": 3642,
+    "Identificador_Unico": "9-706-693",
+    "Edad": 67,
+    "Ocupacion": "JUBILADO",
+    "NombreEmpleadorCliente": "CAJA DE SEGURO SOCIAL",
+    "CargoEmpleoCliente": "JUBILADO",
+    "FechaIngresoEmpleo": "2010-05-15",
+    "saldo": 15000.50,
+    "monto_letra": 450.75,
+    "fecha_inicio": "2020-01-10"
+  },
+  {
+    "Cliente": 10547,
+    "Identificador_Unico": "8-904-143",
+    "Edad": 45,
+    "Ocupacion": "POLICIA",
+    "NombreEmpleadorCliente": "POLICIA NACIONAL",
+    "CargoEmpleoCliente": "POLICIA",
+    "FechaIngresoEmpleo": "2015-03-20",
+    "saldo": 8500.25,
+    "monto_letra": 320.00,
+    "fecha_inicio": "2018-06-05"
+  },
+  {
+    "Cliente": 13095,
+    "Identificador_Unico": "8-398-877",
+    "Edad": 52,
+    "Ocupacion": "DOCENTE",
+    "NombreEmpleadorCliente": "MINISTERIO DE EDUCACION",
+    "CargoEmpleoCliente": "DOCENTE",
+    "FechaIngresoEmpleo": "2012-08-10",
+    "saldo": 25000.00,
+    "monto_letra": 680.50,
+    "fecha_inicio": "2019-03-20"
+  },
+  {
+    "Cliente": 14504,
+    "Identificador_Unico": "8-142-410",
+    "Edad": 38,
+    "Ocupacion": "SUPERVISOR",
+    "NombreEmpleadorCliente": "EMPRESA PRIVADA",
+    "CargoEmpleoCliente": "SUPERVISOR",
+    "FechaIngresoEmpleo": "2018-12-01",
+    "saldo": 12750.80,
+    "monto_letra": null,
+    "fecha_inicio": "2021-08-15"
+  },
+  {
+    "Cliente": 20822,
+    "Identificador_Unico": "8-372-792",
+    "Edad": 55,
+    "Ocupacion": "SECRETARIA",
+    "NombreEmpleadorCliente": "MINISTERIO DE SALUD",
+    "CargoEmpleoCliente": "SECRETARIA",
+    "FechaIngresoEmpleo": "2016-07-22",
+    "saldo": 18500.00,
+    "monto_letra": 520.25,
+    "fecha_inicio": "2020-11-30"
+  }
+]
