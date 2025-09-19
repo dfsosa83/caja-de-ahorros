@@ -1,0 +1,7 @@
+scenario,status,customers,avg_income,min_income,max_income,income_range,avg_ci_width
+young_professionals,SUCCESS,3,1534.62,1245.30,1789.20,543.90,1265.95
+mid_career,SUCCESS,3,2456.78,2134.50,2789.45,654.95,1265.95
+government_employees,SUCCESS,3,1876.34,1623.40,2089.75,466.35,1265.95
+retirees,SUCCESS,2,1734.55,1456.75,2012.35,555.60,1265.95
+entrepreneurs,SUCCESS,2,1689.23,1534.60,1843.86,309.26,1265.95
+high_income,SUCCESS,2,3245.67,2987.45,3503.89,516.44,1265.95

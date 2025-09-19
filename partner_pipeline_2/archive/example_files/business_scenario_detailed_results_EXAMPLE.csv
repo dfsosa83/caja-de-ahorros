@@ -1,0 +1,16 @@
+Cliente,Identificador_Unico,predicted_income,income_lower_90,income_upper_90,scenario
+77001,BIZ-001,1245.30,734.37,2000.32,young_professionals
+77002,BIZ-002,1534.60,1023.67,2289.62,young_professionals
+77003,BIZ-003,1823.95,1313.02,2578.97,young_professionals
+77004,BIZ-004,2134.50,1623.57,2889.52,mid_career
+77005,BIZ-005,2789.45,2278.52,3544.47,mid_career
+77006,BIZ-006,2446.40,1935.47,3201.42,mid_career
+77007,BIZ-007,1623.40,1112.47,2378.42,government_employees
+77008,BIZ-008,2089.75,1578.82,2844.77,government_employees
+77009,BIZ-009,1915.87,1404.94,2670.89,government_employees
+77010,BIZ-010,1456.75,945.82,2211.77,retirees
+77011,BIZ-011,2012.35,1501.42,2767.37,retirees
+77012,BIZ-012,1534.60,1023.67,2289.62,entrepreneurs
+77013,BIZ-013,1843.86,1332.93,2598.88,entrepreneurs
+77014,BIZ-014,2987.45,2476.52,3742.47,high_income
+77015,BIZ-015,3503.89,2992.96,4258.91,high_income

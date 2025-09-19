@@ -1,0 +1,8 @@
+scenario,status,predicted_income,ci_lower,ci_upper,ci_width,error
+minimal_data,SUCCESS,1456.75,945.82,2211.77,1265.95,
+missing_financial,SUCCESS,1623.40,1112.47,2378.42,1265.95,
+missing_dates,SUCCESS,1789.20,1278.27,2544.22,1265.95,
+unknown_categories,SUCCESS,1534.60,1023.67,2289.62,1265.95,
+extreme_young,SUCCESS,1245.30,734.37,2000.32,1265.95,
+extreme_old,SUCCESS,1987.85,1476.92,2742.87,1265.95,
+zero_values,ERROR,,,,,Division by zero in feature engineering

@@ -11,7 +11,8 @@ REQUIRED_COLUMNS = [
     'FechaIngresoEmpleo',         
     'saldo',                      
     'monto_letra',                
-    'fecha_inicio'                
+    'fecha_inicio',
+    'fecha_vencimiento'                
 ] 
 
 OPTIONAL_COLUMNS = [
@@ -23,7 +24,6 @@ OPTIONAL_COLUMNS = [
     'Estado_Civil',               # Not used in final model
     'productos_activos',          # Not used in model
     'letras_mensuales',           # Not used in model
-    'fecha_vencimiento',          # Not used in model
     'ControlDate',                # Metadata
     'monto_prestamo',             # Not used in model
     'tasa_prestamo',              # Not used in model

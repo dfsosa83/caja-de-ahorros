@@ -1,0 +1,8 @@
+scenario,status,predicted_income,ci_lower,ci_upper,ci_width,error
+invalid_dates,SUCCESS,1567.25,1056.32,2322.27,1265.95,
+text_in_numbers,ERROR,,,,,Could not convert string to float: 'thirty-five'
+special_characters,SUCCESS,1634.80,1123.87,2389.82,1265.95,
+missing_columns,ERROR,,,,,Required column 'Edad' not found
+empty_dataset,ERROR,,,,,Empty DataFrame provided
+duplicate_records,SUCCESS,1456.75,945.82,2211.77,1265.95,
+mixed_data_types,SUCCESS,1723.45,1212.52,2478.47,1265.95
